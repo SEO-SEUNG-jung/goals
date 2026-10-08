@@ -263,7 +263,27 @@ button.nav{width:40px;height:36px;padding:0;font-size:14px}
 .rt.on{background:var(--accent-soft);border-color:var(--accent-2)}
 .rt.on .ck{background:var(--pos);border-color:var(--pos)}
 .rt.on .nm{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line-2)}
-.addtask{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+/* 「오늘」 화면 (2026-10-08 가독성 정리): 루틴은 영역별 바둑판, To-do는 넘어온 일·오늘·완료·예정으로 구분 */
+.today-grid{display:grid;gap:16px;grid-template-columns:minmax(0,3fr) minmax(320px,2fr);align-items:start}
+@media (max-width:1000px){.today-grid{grid-template-columns:1fr}}
+.today-grid .grp{margin-bottom:0}
+.today-grid .grp+.grp{margin-top:16px}
+.today-grid .grp-h{font-size:13px;color:var(--text);margin:0 2px 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.gcnt{font-size:12px;font-weight:600;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:0 8px;font-variant-numeric:tabular-nums}
+.gcnt.full{color:var(--pos);border-color:var(--pos)}
+.rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.rt-grid .rt{margin-bottom:0;padding:10px 10px}
+.rt-grid .rt .nm{font-size:14.5px;line-height:1.35}
+.rt-grid .rt.on .nm{text-decoration:none;color:var(--text)}
+.rt-grid .rt.on{border-color:var(--pos)}
+.tdsec+.tdsec{margin-top:14px}
+.tdsec .grp-h{font-size:13px;color:var(--text);margin:0 2px 4px}
+.tdsec .grp-h.late{color:var(--neg)}
+.tdsec .grp-h.dim{color:var(--muted)}
+.tdsec .task{padding:9px 2px;font-size:15px}
+.tdsec .task .tt small{font-size:12px}
+@media (max-width:640px){.rt-grid{grid-template-columns:1fr;gap:6px}.rt-grid .rt{padding:8px 10px}}
+.addtask{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .addtask input{flex:1 1 180px}
 .addtask input[type=date]{flex:0 1 150px}
 .task.late .tt small{color:var(--neg)}
@@ -792,15 +812,14 @@ VIEWS.today = () => {
     <div class="kpi"><div class="l">이번 주 루틴 달성률</div><div class="v">${pctTxt(wkAll ? wkDone / wkAll : null)}</div>${bar(wkAll ? wkDone / wkAll : null)}</div>
     <div class="kpi"><div class="l">이번 달 목표</div><div class="v">${monthGoals.filter(g => g.status === '완료').length}<span class="u">/${monthGoals.length} 완료</span></div>${bar(monthGoals.length ? monthGoals.reduce((a, g) => a + (goalProgress(g) || 0), 0) / monthGoals.length : null)}</div>
   </div>
-  <div class="row">
-    <div class="card"><h2>루틴 <small>누르면 체크 · 다시 누르면 해제</small></h2>
-      ${groups.map(g => `<div class="grp"><div class="grp-h">${esc(g.a.icon)} ${esc(g.a.name)}</div>${g.list.map(rtRow).join('')}</div>`).join('') || `<p class="muted">이날 할 루틴이 없습니다. <button class="link" data-act="go" data-tab="routine">루틴 추가 →</button></p>`}
+  <div class="today-grid">
+    <div class="card"><h2>${isToday ? '오늘의' : '이날'} 루틴 <small>${st.all - st.done ? `남은 루틴 ${st.all - st.done}개` : st.all ? '모두 완료 🎉' : ''} · 누르면 체크, 다시 누르면 해제</small></h2>
+      ${groups.map(g => { const daily = g.list.filter(r => !isWeekly(r)), n = daily.filter(r => isDone(r, d)).length; /* 영역 숫자는 위 「오늘 루틴」과 같은 기준(주 N회 루틴 제외) */ return `<div class="grp"><div class="grp-h"><span>${esc(g.a.icon)} ${esc(g.a.name)}</span>${daily.length ? `<span class="gcnt${n === daily.length ? ' full' : ''}">${n}/${daily.length}</span>` : ''}</div><div class="rt-grid">${g.list.map(rtRow).join('')}</div></div>`; }).join('') || `<p class="muted">이날 할 루틴이 없습니다. <button class="link" data-act="go" data-tab="routine">루틴 추가 →</button></p>`}
     </div>
     <div class="stack">
       <div class="card"><h2>${isToday ? '오늘의' : '이날'} To-do <small>못 한 것은 다음 날로 자동으로 넘어감</small></h2>
         <form class="addtask" data-form="todo"><input name="title" placeholder="할 일 입력 후 Enter" autocomplete="off" data-keep="todoInput"><input type="date" name="date" value="${d}" title="해야 하는 날"><button class="primary" type="submit">추가</button></form>
-        <div class="tasks">${todos.map(t => todoRow(t, d)).join('') || '<p class="muted">To-do가 없습니다.</p>'}</div>
-        ${upcoming.length ? `<div class="overdue"><div class="grp-h">예정 ${upcoming.length}건</div>${upcoming.slice(0, 10).map(t => todoRow(t, d)).join('')}${upcoming.length > 10 ? `<p class="muted">외 ${upcoming.length - 10}건</p>` : ''}</div>` : ''}
+        ${todoSections(todos, upcoming, d)}
       </div>
       ${monthGoals.length ? `<div class="card"><h2>${+d.slice(5, 7)}월 목표 <small><button class="link" data-act="go" data-tab="goal">목표 보기 →</button></small></h2>${monthGoals.map(g => `<div class="gmini"><span>${esc(areaOf(g.area).icon)} ${esc(g.title)}</span>${bar(goalProgress(g), g.status === '완료' ? 'done' : '')}<b>${pctTxt(goalProgress(g))}</b></div>`).join('')}</div>` : ''}
     </div>
@@ -811,6 +830,15 @@ function todosOn(d) {
   const isT = d === today();
   return live('todos').filter(t => t.date === d || (isT && t.date < d && (!t.done || t.doneDate === d)))
     .sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || a.date.localeCompare(b.date) || (a.upd || 0) - (b.upd || 0));
+}
+// To-do를 넘어온 일 / 오늘 할 일 / 완료 / 예정으로 나눠서 보여 줌
+function todoSections(todos, upcoming, d) {
+  const late = todos.filter(t => !t.done && t.date < d), now = todos.filter(t => !t.done && t.date >= d), done = todos.filter(t => t.done);
+  const sec = (label, list, cls = '') => list.length ? `<div class="tdsec"><div class="grp-h ${cls}"><span>${label}</span><span class="gcnt">${list.length}</span></div><div class="tasks">${list.map(t => todoRow(t, d)).join('')}</div></div>` : '';
+  const isT = d === today();
+  const body = sec('⚠ 넘어온 일', late, 'late') + sec(isT ? '오늘 할 일' : '이날 할 일', now) + sec('✓ 완료', done, 'dim')
+    + (upcoming.length ? sec('예정', upcoming.slice(0, 10), 'dim') + (upcoming.length > 10 ? `<p class="muted">외 ${upcoming.length - 10}건</p>` : '') : '');
+  return body || '<p class="muted">To-do가 없습니다. 위 칸에 적고 Enter를 누르세요.</p>';
 }
 function todoRow(t, d) {
   const note = t.date < d ? `${mlabel(t.date)}부터 넘어옴` : t.date > d ? `${mlabel(t.date)} 예정` : '';

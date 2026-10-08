@@ -665,8 +665,8 @@ async function loadLedger(force) {
   LDAYS = new Set(); for (const t of ledger.tx || []) if (!t.del && t.upd > 1e12) LDAYS.add(ds(new Date(t.upd)));
   return JSON.stringify([ledgerSrc, (ledger.tx || []).length, ledger.meta && ledger.meta.upd]) !== before;
 }
-const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
-const metricValue = key => !key ? null : key[0] === 'w' ? workMetric(key) : ledgerMetric(key);
+const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
+const metricValue = (key, g) => !key ? null : key[0] === 'w' ? workMetric(key, g) : ledgerMetric(key); // g: ëª©í(ì ëª©íë©´ ê·¸ ë¬ ê¸°ì¤ì¼ë¡ ê³ì°)
 function ledgerMetric(key) {
   if (!ledger) return null;
   const L = c => (ledger[c] || []).filter(r => !r.del), Y = String(new Date().getFullYear());
@@ -702,9 +702,11 @@ async function loadWork(force) {
 }
 const wCaseYear = c => c.acceptDate ? +c.acceptDate.slice(0, 4) : (c.year || new Date().getFullYear());
 const wBillTotal = b => (b.fee || 0) + (b.vat || 0) + (b.extra || 0);
-function workMetric(key) {
+function workMetric(key, g) {
   if (!work) return null;
   const cases = work.cases || [], Y = new Date().getFullYear(), ym = today().slice(0, 7);
+  // ê·¸ ë¬ ë§¤ì¶ì¡ = ìë¬´ê´ë¦¬ ëìë³´ë ãìë³ ë§¤ì¶ì¡ã(ììì ê¸°ì¤, VAT í¬í¨: ììë£+ë¶ê°ì¸+ê¸°í). ì ëª©íë©´ ê·¸ ëª©íì ë¬, ìëë©´ ì´ë² ë¬
+  if (key === 'wSalesMonth') { const m = g && g.level === 'month' && /^\d{4}-\d{2}$/.test(String(g.period)) ? String(g.period) : ym; return cases.filter(c => String(c.acceptDate || '').startsWith(m)).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + wBillTotal(b), 0), 0); }
   if (key === 'wCountYear') return cases.filter(c => wCaseYear(c) === Y).length;
   if (key === 'wFeeYear') return cases.filter(c => wCaseYear(c) === Y).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + (b.fee || 0), 0), 0);
   if (key === 'wPaidYear' || key === 'wPaidMonth') { let s = 0; for (const c of cases) for (const b of c.billings || []) if (b.paidDate && wBillTotal(b) && (key === 'wPaidYear' ? +b.paidDate.slice(0, 4) === Y : b.paidDate.startsWith(ym))) s += b.fee || 0; return s; }
@@ -757,7 +759,7 @@ function goalProgress(g, depth = 0) {
   if (g.status === '완료') return 1;
   if (pm === 'manual') return clamp((+g.pct || 0) / 100);
   if (pm === 'number') {
-    const cur = g.metric ? metricValue(g.metric) : (g.current === '' || g.current == null ? null : +g.current);
+    const cur = g.metric ? metricValue(g.metric, g) : (g.current === '' || g.current == null ? null : +g.current);
     if (cur == null || g.target === '' || g.target == null) return null;
     const st = +g.start || 0, tg = +g.target;
     return tg === st ? (cur >= tg ? 1 : 0) : clamp((cur - st) / (tg - st));
@@ -767,7 +769,7 @@ function goalProgress(g, depth = 0) {
   if (ps.length) return ps.reduce((a, b) => a + b, 0) / ps.length;
   return null;
 }
-function goalCurrent(g) { if ((g.pmode || 'auto') !== 'number') return ''; const cur = g.metric ? metricValue(g.metric) : g.current; return cur == null || cur === '' ? '' : `${won(cur)}${esc(g.unit || '')} / 목표 ${won(g.target)}${esc(g.unit || '')}`; }
+function goalCurrent(g) { if ((g.pmode || 'auto') !== 'number') return ''; const cur = g.metric ? metricValue(g.metric, g) : g.current; return cur == null || cur === '' ? '' : `${won(cur)}${esc(g.unit || '')} / 목표 ${won(g.target)}${esc(g.unit || '')}`; }
 const ymOf = (y, m) => `${y}-${pad(m)}`;
 const periodLabel = g => g.level === 'month' ? `${+String(g.period).slice(5, 7)}월` : g.level === 'year' ? `${g.period}년` : (g.period || '');
 

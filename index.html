@@ -767,6 +767,7 @@ const goalsOf = (area, level, period, parent) => live('goals').filter(g => g.are
 const childGoals = g => live('goals').filter(x => x.parent === g.id);
 function goalProgress(g, depth = 0) {
   const pm = g.pmode || 'auto';
+  if (pm === 'none') return null; // 진행률 표시 안 함
   if (g.status === '완료') return 1;
   if (pm === 'manual') return clamp((+g.pct || 0) / 100);
   if (pm === 'number') {
@@ -910,10 +911,10 @@ function editRoutine(id) {
 VIEWS.goal = () => {
   const Y = ui.gy, M = ui.gm, ym = ymOf(Y, M);
   const gRow = (g, cls, child = '') => { // child: 이 목표 아래에 하위 목표를 추가하는 버튼(마우스를 올리면 보임)
-    const p = goalProgress(g), cur = goalCurrent(g);
+    const p = goalProgress(g), cur = goalCurrent(g), off = g.pmode === 'none'; // off: 진행률 표시 안 함
     return `<div class="goal ${cls}${g.status === '완료' ? ' done' : ''}${g.status === '보류' ? ' hold' : ''}">
-      <div class="gtop"><button class="link gtitle" data-act="goalEdit" data-id="${esc(g.id)}">${esc(g.title)}</button><span class="gper">${esc(periodLabel(g))}${g.status !== '진행' && g.status ? ' · ' + esc(g.status) : ''}</span>${child}<b class="gp">${pctTxt(p)}</b></div>
-      ${bar(p, g.status === '완료' ? 'done' : '')}${cur ? `<div class="gcur">${cur}</div>` : ''}${g.note ? `<div class="gnote">${esc(g.note)}</div>` : ''}</div>`;
+      <div class="gtop"><button class="link gtitle" data-act="goalEdit" data-id="${esc(g.id)}">${esc(g.title)}</button><span class="gper">${esc(periodLabel(g))}${g.status !== '진행' && g.status ? ' · ' + esc(g.status) : ''}</span>${child}${off ? "" : `<b class="gp">${pctTxt(p)}</b>`}</div>
+      ${off ? '' : bar(p, g.status === '완료' ? 'done' : '')}${cur ? `<div class="gcur">${cur}</div>` : ''}${g.note ? `<div class="gnote">${esc(g.note)}</div>` : ''}</div>`;
   };
   const addBtn = (label, area, level, parent, extra = '') => `<button class="sm addg${extra}" data-act="goalAdd" data-area="${esc(area)}" data-level="${level}" data-parent="${esc(parent || '')}">+ ${label}</button>`;
   const cards = areas().map(a => {
@@ -953,7 +954,7 @@ function editGoal(id, preset) {
     <label class="field"><span>단계</span><select name="level">${opts(LEVELS, g.level)}</select></label>
     <label class="field"><span>기간</span><input name="period" value="${esc(g.period)}" placeholder="장기 2026~2030 / 올해 2026 / 월 2026-10"></label>
     <label class="field"><span>상위 목표</span><select name="parent">${opts(parents(g.level).map(x => [x.id, `${periodLabel(x)} · ${x.title}`]), g.parent, '(없음)')}</select></label>
-    <label class="field"><span>진행률 계산</span><select name="pmode">${opts([['auto', '자동 (하위 목표 평균)'], ['manual', '직접 % 입력'], ['number', '숫자 목표 (현재값 / 목표값)']], g.pmode)}</select></label>
+    <label class="field"><span>진행률 계산</span><select name="pmode">${opts([['auto', '자동 (하위 목표 평균)'], ['manual', '직접 % 입력'], ['number', '숫자 목표 (현재값 / 목표값)'], ['none', '진행률 표시 안 함']], g.pmode)}</select></label>
     <label class="field"><span>상태</span><select name="status">${opts(STATUS, g.status)}</select></label>
     <label class="field" data-pm="manual"><span>진행률 (%)</span><input name="pct" type="number" min="0" max="100" value="${esc(g.pct ?? 0)}"></label>
     <label class="field" data-pm="number"><span>가계부·업무·루틴 값 연결</span><select name="metric">${opts(METRICS.concat(routinesSorted().map(r => ['rt:' + r.id, `루틴: ${r.name} — 그 달 한 날 수`])), g.metric)}</select></label>

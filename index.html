@@ -265,7 +265,8 @@ button.nav{width:40px;height:36px;padding:0;font-size:14px}
 .rt.on .nm{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line-2)}
 .addtask{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .addtask input{flex:1 1 180px}
-.addtask select{flex:0 1 180px}
+.addtask input[type=date]{flex:0 1 150px}
+.task.late .tt small{color:var(--neg)}
 .task{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--line)}
 .task .tck{width:26px;height:26px;padding:0;border-radius:6px;flex:none;font-weight:700}
 .task.on .tck{background:var(--pos);border-color:var(--pos);color:#fff}
@@ -324,8 +325,6 @@ div.lv-month:not(.goal){margin-left:32px;margin-bottom:6px}
 .wd{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:6px;text-align:center;font-size:12px}
 .wd.today{border-color:var(--accent-2)}
 .wd b{display:block;font-size:14px}
-.jr{border-bottom:1px solid var(--line);padding:8px 0}
-.jr p{margin:4px 0 0;color:var(--text);white-space:normal}
 .arow{display:flex;gap:6px;margin-bottom:6px;align-items:center}
 .arow input[data-k=name]{flex:1}
 .field.chk{flex-direction:row;align-items:center;gap:6px;color:var(--text);font-size:13px}
@@ -363,7 +362,7 @@ div.lv-month:not(.goal){margin-left:32px;margin-bottom:6px}
 const APP = 'mokpyo';
 const K_DOC = 'mokpyo.doc', K_DIRTY = 'mokpyo.dirty', K_FILE = 'mokpyo.file', K_TAB = 'mokpyo.tab', K_LPATH = 'mokpyo.ledgerPath';
 const LEDGER_DEFAULT = '/개인문서/가계부_데이터.json';
-const COLS = ['routines', 'checks', 'goals', 'tasks', 'journal', 'reviews'];
+const COLS = ['routines', 'checks', 'goals', 'todos', 'reviews']; // 예전 'tasks'(할 일)·'journal'(오늘의 메모)는 2026-10-08 없앰 → To-do로 대체
 const TABS = [['today', '오늘'], ['routine', '루틴'], ['goal', '목표'], ['review', '회고'], ['set', '설정']];
 const DEFAULT_AREAS = [{ id: 'health', name: '건강', icon: '💪' }, { id: 'work', name: '일·사업', icon: '💼' }, { id: 'money', name: '재정', icon: '💰' }, { id: 'growth', name: '자기계발', icon: '📚' }, { id: 'hobby', name: '취미', icon: '🎨' }];
 const LEVELS = [['long', '장기 목표 (3~5년)'], ['year', '올해 목표'], ['month', '이번 달 목표']];
@@ -772,8 +771,6 @@ function goalProgress(g, depth = 0) {
   const kids = depth < 5 ? childGoals(g) : [];
   const ps = kids.map(k => goalProgress(k, depth + 1)).filter(p => p != null);
   if (ps.length) return ps.reduce((a, b) => a + b, 0) / ps.length;
-  const ts = live('tasks').filter(t => t.goal === g.id);
-  if (ts.length) return ts.filter(t => t.done).length / ts.length;
   return null;
 }
 function goalCurrent(g) { if ((g.pmode || 'auto') !== 'number') return ''; const cur = g.metric ? metricValue(g.metric) : g.current; return cur == null || cur === '' ? '' : `${won(cur)}${esc(g.unit || '')} / 목표 ${won(g.target)}${esc(g.unit || '')}`; }
@@ -800,9 +797,7 @@ const bar = (p, cls = '') => `<div class="pbar ${cls}"><i style="width:${p == nu
 VIEWS.today = () => {
   const d = ui.date, isToday = d === today(), st = dayStat(d), ws = weekStart(d);
   const rs = routinesSorted().filter(r => isWeekly(r) ? activeOn(r, d) : scheduled(r, d));
-  const tasks = live('tasks').filter(t => t.date === d).sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || (a.upd || 0) - (b.upd || 0));
-  const overdue = isToday ? live('tasks').filter(t => !t.done && t.date < d).sort((a, b) => a.date.localeCompare(b.date)) : [];
-  const j = live('journal').find(x => x.id === 'j-' + d);
+  const todos = todosOn(d), upcoming = isToday ? live('todos').filter(t => !t.done && t.date > d).sort((a, b) => a.date.localeCompare(b.date)) : [];
   let wkAll = 0, wkDone = 0; for (let i = 0; i < 7; i++) { const x = addDays(ws, i); if (x > today()) break; const s = dayStat(x); wkAll += s.all; wkDone += s.done; }
   const groups = areas().map(a => ({ a, list: rs.filter(r => r.area === a.id) })).concat([{ a: { id: '', name: '기타', icon: '📌' }, list: rs.filter(r => !areas().some(a => a.id === r.area)) }]).filter(g => g.list.length);
   const rtRow = r => {
@@ -811,7 +806,6 @@ VIEWS.today = () => {
     return `<button class="rt${done ? ' on' : ''}" data-act="rtToggle" data-id="${esc(r.id)}"><span class="ic">${esc(r.icon || '✔️')}</span><span class="nm">${esc(r.name)}<small>${meta}${isAuto(r, d) ? ' · 가계부 입력으로 자동 체크' : ''}</small></span><span class="ck">${done ? '✓' : ''}</span></button>`;
   };
   const monthGoals = live('goals').filter(g => g.level === 'month' && g.period === d.slice(0, 7) && g.status !== '보류');
-  const goalOpts = live('goals').filter(g => g.status !== '완료' && g.status !== '보류' && (g.level === 'month' ? g.period === d.slice(0, 7) : g.level === 'year' ? String(g.period) === d.slice(0, 4) : false)).map(g => [g.id, `${areaOf(g.area).icon} ${g.title}`]);
   return `
   <div class="daybar card">
     <button class="nav" data-act="dayMove" data-n="-1" aria-label="전날">◀</button>
@@ -820,7 +814,7 @@ VIEWS.today = () => {
   </div>
   <div class="kpis">
     <div class="kpi"><div class="l">${isToday ? '오늘' : '이날'} 루틴</div><div class="v">${st.done}<span class="u">/${st.all}</span></div>${bar(st.p)}</div>
-    <div class="kpi"><div class="l">할 일</div><div class="v">${tasks.filter(t => t.done).length}<span class="u">/${tasks.length}</span></div>${bar(tasks.length ? tasks.filter(t => t.done).length / tasks.length : null)}</div>
+    <div class="kpi"><div class="l">${isToday ? '오늘' : '이날'} To-do</div><div class="v">${todos.filter(t => t.done).length}<span class="u">/${todos.length}</span></div>${bar(todos.length ? todos.filter(t => t.done).length / todos.length : null)}</div>
     <div class="kpi"><div class="l">이번 주 루틴 달성률</div><div class="v">${pctTxt(wkAll ? wkDone / wkAll : null)}</div>${bar(wkAll ? wkDone / wkAll : null)}</div>
     <div class="kpi"><div class="l">이번 달 목표</div><div class="v">${monthGoals.filter(g => g.status === '완료').length}<span class="u">/${monthGoals.length} 완료</span></div>${bar(monthGoals.length ? monthGoals.reduce((a, g) => a + (goalProgress(g) || 0), 0) / monthGoals.length : null)}</div>
   </div>
@@ -830,13 +824,11 @@ VIEWS.today = () => {
     </div>
     <div class="stack">
       ${workCard(d)}
-      <div class="card"><h2>할 일</h2>
-        <form class="addtask" data-form="task"><input name="title" placeholder="할 일 입력 후 Enter" autocomplete="off" data-keep="taskInput"><select name="goal">${opts(goalOpts, '', '목표 연결 (선택)')}</select><button class="primary" type="submit">추가</button></form>
-        <div class="tasks">${tasks.map(t => taskRow(t)).join('') || '<p class="muted">할 일이 없습니다.</p>'}</div>
-        ${overdue.length ? `<div class="overdue"><div class="grp-h">밀린 할 일 ${overdue.length}건 <button class="link" data-act="moveAllToday">모두 오늘로</button></div>${overdue.map(t => taskRow(t, true)).join('')}</div>` : ''}
+      <div class="card"><h2>${isToday ? '오늘의' : '이날'} To-do <small>못 한 것은 다음 날로 자동으로 넘어감</small></h2>
+        <form class="addtask" data-form="todo"><input name="title" placeholder="할 일 입력 후 Enter" autocomplete="off" data-keep="todoInput"><input type="date" name="date" value="${d}" title="해야 하는 날"><button class="primary" type="submit">추가</button></form>
+        <div class="tasks">${todos.map(t => todoRow(t, d)).join('') || '<p class="muted">To-do가 없습니다.</p>'}</div>
+        ${upcoming.length ? `<div class="overdue"><div class="grp-h">예정 ${upcoming.length}건</div>${upcoming.slice(0, 10).map(t => todoRow(t, d)).join('')}${upcoming.length > 10 ? `<p class="muted">외 ${upcoming.length - 10}건</p>` : ''}</div>` : ''}
       </div>
-      <div class="card"><h2>오늘의 메모 <small>한 줄 일기·감사·생각</small></h2>
-        <textarea class="memo" data-journal="${d}" data-keep="memo" rows="4" placeholder="오늘 있었던 일, 느낀 점을 적어 보세요">${esc(j ? j.text : '')}</textarea></div>
       ${monthGoals.length ? `<div class="card"><h2>${+d.slice(5, 7)}월 목표 <small><button class="link" data-act="go" data-tab="goal">목표 보기 →</button></small></h2>${monthGoals.map(g => `<div class="gmini"><span>${esc(areaOf(g.area).icon)} ${esc(g.title)}</span>${bar(goalProgress(g), g.status === '완료' ? 'done' : '')}<b>${pctTxt(goalProgress(g))}</b></div>`).join('')}</div>` : ''}
     </div>
   </div>`;
@@ -855,9 +847,15 @@ function workCard(d) {
     ${n ? '' : `<p class="muted">${d === today() ? '오늘 처리할 업무 할 일이 없습니다.' : '이날 마감인 업무 할 일이 없습니다.'}</p>`}
     <div style="margin-top:6px"><a class="link" href="${esc(workUrl('#todos'))}" target="_blank" rel="noopener">업무관리 할 일 전체 보기 →</a></div></div>`;
 }
-function taskRow(t, old) {
-  const g = t.goal ? live('goals').find(x => x.id === t.goal) : null;
-  return `<div class="task${t.done ? ' on' : ''}"><button class="tck" data-act="taskToggle" data-id="${esc(t.id)}" aria-label="완료">${t.done ? '✓' : ''}</button><span class="tt">${esc(t.title)}${g ? `<small>${esc(areaOf(g.area).icon)} ${esc(g.title)}</small>` : ''}${old ? `<small>${mlabel(t.date)}</small>` : ''}</span>${old ? `<button class="sm" data-act="taskToday" data-id="${esc(t.id)}">오늘로</button>` : ''}<button class="sm ghost" data-act="taskDel" data-id="${esc(t.id)}" aria-label="삭제">×</button></div>`;
+// To-do: {id, date(해야 하는 날), title, done, doneDate}. 오늘 화면에는 오늘 할 것 + 못 한 채 지난 것(자동으로 넘어옴) + 오늘 끝낸 넘어온 것
+function todosOn(d) {
+  const isT = d === today();
+  return live('todos').filter(t => t.date === d || (isT && t.date < d && (!t.done || t.doneDate === d)))
+    .sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || a.date.localeCompare(b.date) || (a.upd || 0) - (b.upd || 0));
+}
+function todoRow(t, d) {
+  const note = t.date < d ? `${mlabel(t.date)}부터 넘어옴` : t.date > d ? `${mlabel(t.date)} 예정` : '';
+  return `<div class="task${t.done ? ' on' : ''}${t.date < d && !t.done ? ' late' : ''}"><button class="tck" data-act="todoToggle" data-id="${esc(t.id)}" aria-label="완료">${t.done ? '✓' : ''}</button><span class="tt">${esc(t.title)}${note ? `<small>${note}</small>` : ''}</span><button class="sm ghost" data-act="todoDel" data-id="${esc(t.id)}" aria-label="삭제">×</button></div>`;
 }
 
 /* ====================== 화면: 루틴 ====================== */
@@ -955,7 +953,7 @@ function editGoal(id, preset) {
     <label class="field"><span>단계</span><select name="level">${opts(LEVELS, g.level)}</select></label>
     <label class="field"><span>기간</span><input name="period" value="${esc(g.period)}" placeholder="장기 2026~2030 / 올해 2026 / 월 2026-10"></label>
     <label class="field"><span>상위 목표</span><select name="parent">${opts(parents(g.level).map(x => [x.id, `${periodLabel(x)} · ${x.title}`]), g.parent, '(없음)')}</select></label>
-    <label class="field"><span>진행률 계산</span><select name="pmode">${opts([['auto', '자동 (하위 목표·연결된 할 일)'], ['manual', '직접 % 입력'], ['number', '숫자 목표 (현재값 / 목표값)']], g.pmode)}</select></label>
+    <label class="field"><span>진행률 계산</span><select name="pmode">${opts([['auto', '자동 (하위 목표 평균)'], ['manual', '직접 % 입력'], ['number', '숫자 목표 (현재값 / 목표값)']], g.pmode)}</select></label>
     <label class="field"><span>상태</span><select name="status">${opts(STATUS, g.status)}</select></label>
     <label class="field" data-pm="manual"><span>진행률 (%)</span><input name="pct" type="number" min="0" max="100" value="${esc(g.pct ?? 0)}"></label>
     <label class="field" data-pm="number"><span>가계부·업무 값 연결</span><select name="metric">${opts(METRICS, g.metric)}</select></label>
@@ -989,8 +987,6 @@ VIEWS.review = () => {
   const ws = ui.week, days = [...Array(7).keys()].map(i => addDays(ws, i)), t = today();
   const rv = live('reviews').find(x => x.id === 'w-' + ws) || {};
   const st = days.map(d => d > t ? null : dayStat(d));
-  const tasks = live('tasks').filter(x => x.date >= ws && x.date <= addDays(ws, 6));
-  const jr = live('journal').filter(x => x.date >= ws && x.date <= addDays(ws, 6) && x.text).sort((a, b) => a.date.localeCompare(b.date));
   const rrows = routinesSorted().filter(r => days.some(d => activeOn(r, d))).map(r => {
     const wd = weekDone(r, ws), goal = isWeekly(r) ? (r.freq.n || 1) : days.filter(d => d <= t && scheduled(r, d)).length;
     return `<div class="gmini"><span>${esc(r.icon || '')} ${esc(r.name)}</span>${bar(goal ? Math.min(1, wd / goal) : null, wd >= goal && goal ? 'done' : '')}<b>${wd}/${goal}</b></div>`;
@@ -999,12 +995,10 @@ VIEWS.review = () => {
   return `<div class="card"><div class="toolbar"><button class="nav" data-act="weekMove" data-n="-7">◀</button><b>${mlabel(ws)} ~ ${mlabel(addDays(ws, 6))} 주간 회고</b><button class="nav" data-act="weekMove" data-n="7">▶</button>${ws !== weekStart(t) ? '<button class="link" data-act="weekNow">이번 주</button>' : ''}</div>
     <div class="weekdots">${days.map((d, i) => `<div class="wd${d === t ? ' today' : ''}"><span>${DOW[pd(d).getDay()]}</span>${st[i] ? `<b>${pctTxt(st[i].p)}</b>${bar(st[i].p)}` : '<b class="muted">-</b>'}</div>`).join('')}</div></div>
   <div class="row">
-    <div class="card"><h2>이번 주 루틴 <small>체크한 날 / 해야 할 날</small></h2>${rrows || '<p class="muted">루틴이 없습니다.</p>'}
-      <p class="help">할 일 ${tasks.filter(x => x.done).length}/${tasks.length}건 완료 · 메모 쓴 날 ${jr.length}일</p></div>
+    <div class="card"><h2>이번 주 루틴 <small>체크한 날 / 해야 할 날</small></h2>${rrows || '<p class="muted">루틴이 없습니다.</p>'}</div>
     <div class="card"><h2>돌아보기 <small>적는 즉시 저장</small></h2><div class="mbody" style="padding:0">
       ${field('good', '잘한 점', '이번 주에 잘한 것, 지킨 것')}${field('bad', '아쉬운 점', '못 지킨 것과 이유')}${field('next', '다음 주 집중할 것', '다음 주에 꼭 할 1~3가지')}</div></div>
-  </div>
-  ${jr.length ? `<div class="card"><h2>이번 주 메모</h2>${jr.map(x => `<div class="jr"><b>${dlabel(x.date)}</b><p>${esc(x.text).replace(/\n/g, '<br>')}</p></div>`).join('')}</div>` : ''}`;
+  </div>`;
 };
 
 /* ====================== 화면: 설정 ====================== */
@@ -1053,10 +1047,8 @@ const ACT = {
   cellToggle: b => { const r = findR(b.dataset.id); if (r) toggleCheck(r, b.dataset.d); },
   weekMove: b => { ui.week = addDays(ui.week, +b.dataset.n); render(); }, weekNow: () => { ui.week = weekStart(today()); render(); },
   rtAdd: () => editRoutine(null), rtEdit: b => editRoutine(b.dataset.id),
-  taskToggle: b => { const t = doc.tasks.find(x => x.id === b.dataset.id); if (t) { put('tasks', Object.assign({}, t, { done: t.done ? 0 : 1 })); commit(); } },
-  taskDel: b => { const t = doc.tasks.find(x => x.id === b.dataset.id); if (t && confirm(`「${t.title}」을(를) 삭제할까요?`)) { remove('tasks', t.id); commit(); } },
-  taskToday: b => { const t = doc.tasks.find(x => x.id === b.dataset.id); if (t) { put('tasks', Object.assign({}, t, { date: today() })); commit(); } },
-  moveAllToday: () => { for (const t of live('tasks').filter(t => !t.done && t.date < today())) put('tasks', Object.assign({}, t, { date: today() })); commit(); },
+  todoToggle: b => { const t = doc.todos.find(x => x.id === b.dataset.id); if (t) { put('todos', Object.assign({}, t, t.done ? { done: 0, doneDate: '' } : { done: 1, doneDate: today() })); commit(); } },
+  todoDel: b => { const t = doc.todos.find(x => x.id === b.dataset.id); if (t && confirm(`「${t.title}」을(를) 삭제할까요?`)) { remove('todos', t.id); commit(); } },
   goalAdd: b => editGoal(null, { area: b.dataset.area, level: b.dataset.level, parent: b.dataset.parent }), goalEdit: b => editGoal(b.dataset.id),
   areaUp: b => { const i = +b.dataset.i; if (!i) return; setMeta(m => { m.areas = m.areas && m.areas.length ? m.areas : DEFAULT_AREAS.slice(); [m.areas[i - 1], m.areas[i]] = [m.areas[i], m.areas[i - 1]]; }); commit(); },
   areaDel: b => { const i = +b.dataset.i, a = areas()[i], n = live('goals').filter(g => g.area === a.id).length + live('routines').filter(r => r.area === a.id).length; if (!confirm(n ? `「${a.name}」에 목표·루틴 ${n}개가 있습니다. 영역만 지우고 목표·루틴은 「기타」로 남길까요?` : `「${a.name}」 영역을 삭제할까요?`)) return; setMeta(m => { m.areas = (m.areas && m.areas.length ? m.areas : DEFAULT_AREAS.slice()).filter((_, k) => k !== i); }); commit(); },
@@ -1074,23 +1066,24 @@ const main = $('#main');
 main.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && ACT[b.dataset.act]) { e.preventDefault(); ACT[b.dataset.act](b, e); } });
 $('#banner').addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && ACT[b.dataset.act]) ACT[b.dataset.act](b, e); });
 main.addEventListener('submit', e => {
-  const f = e.target; if (f.dataset.form !== 'task') return; e.preventDefault();
+  const f = e.target; if (f.dataset.form !== 'todo') return; e.preventDefault();
   const title = f.title.value.trim(); if (!title) return;
-  put('tasks', { id: uid(), date: ui.date, title, goal: f.goal.value, done: 0 }); commit(false); render();
-  const inp = $('#main [data-keep="taskInput"]'); if (inp) inp.focus();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(f.date.value) ? f.date.value : ui.date;
+  put('todos', { id: uid(), date, title, done: 0, doneDate: '' }); commit(false); render();
+  if (date !== ui.date) toast(`${mlabel(date)} To-do로 추가했습니다`);
+  const inp = $('#main [data-keep="todoInput"]'); if (inp) inp.focus();
 });
 let jT = null;
 main.addEventListener('input', e => {
   const el = e.target;
-  if (el.dataset.journal || el.dataset.review) { clearTimeout(jT); jT = setTimeout(() => saveText(el), 800); }
+  if (el.dataset.review) { clearTimeout(jT); jT = setTimeout(() => saveText(el), 800); }
 });
 function saveText(el) {
-  if (el.dataset.journal) { const d = el.dataset.journal, id = 'j-' + d, old = doc.journal.find(x => x.id === id); if ((old && !old.del ? old.text : '') === el.value) return; put('journal', { id, date: d, text: el.value }); commit(false); }
-  else if (el.dataset.review) { const id = 'w-' + ui.week, old = doc.reviews.find(x => x.id === id && !x.del) || { id, week: ui.week }; if ((old[el.dataset.review] || '') === el.value) return; put('reviews', Object.assign({}, old, { [el.dataset.review]: el.value })); commit(false); }
+  if (el.dataset.review) { const id = 'w-' + ui.week, old = doc.reviews.find(x => x.id === id && !x.del) || { id, week: ui.week }; if ((old[el.dataset.review] || '') === el.value) return; put('reviews', Object.assign({}, old, { [el.dataset.review]: el.value })); commit(false); }
 }
 main.addEventListener('change', e => {
   const el = e.target;
-  if (el.dataset.journal || el.dataset.review) { clearTimeout(jT); saveText(el); return; }
+  if (el.dataset.review) { clearTimeout(jT); saveText(el); return; }
   if (el.dataset.g) { ui[el.dataset.g] = +el.value; render(); return; }
   if (el.dataset.area != null) { const i = +el.dataset.area, k = el.dataset.k; setMeta(m => { m.areas = (m.areas && m.areas.length ? m.areas : DEFAULT_AREAS.slice()).map(a => ({ ...a })); m.areas[i][k] = el.value.trim(); }); commit(); return; }
   if (el.id === 'importFile' && el.files[0]) {

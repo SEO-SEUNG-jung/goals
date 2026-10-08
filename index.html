@@ -665,7 +665,7 @@ async function loadLedger(force) {
   LDAYS = new Set(); for (const t of ledger.tx || []) if (!t.del && t.upd > 1e12) LDAYS.add(ds(new Date(t.upd)));
   return JSON.stringify([ledgerSrc, (ledger.tx || []).length, ledger.meta && ledger.meta.upd]) !== before;
 }
-const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wSalesYear', '업무: 그 해 매출액(수임 기준·VAT 포함)'], ['wSalesRange', '업무: 목표 기간 누적 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
+const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['loan', '가계부: 대출 잔액(「대출」 묶음, 카드 미결제 제외)'], ['invest', '가계부: 투자 평가액(「투자」 묶음)'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wSalesYear', '업무: 그 해 매출액(수임 기준·VAT 포함)'], ['wSalesRange', '업무: 목표 기간 누적 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
 const metricValue = (key, g) => !key ? null : key.startsWith('rt:') ? routineMetric(key.slice(3), g) : key[0] === 'w' ? workMetric(key, g) : ledgerMetric(key); // g: ëª©í(ì ëª©íë©´ ê·¸ ë¬ ê¸°ì¤ì¼ë¡ ê³ì°)
 function routineMetric(rid, g) { // 루틴 연결(rt:루틴id, 여러 개면 rt:id1+id2 — 그중 하나라도 한 날): 그 달(월 목표면 목표의 달, 아니면 이번 달)에 그 루틴을 한 날 수
   const ids = rid.split('+'), rs = (doc.routines || []).filter(x => ids.includes(x.id) && !x.del); if (!rs.length) return null;
@@ -677,6 +677,7 @@ function ledgerMetric(key) {
   if (!ledger) return null;
   const L = c => (ledger[c] || []).filter(r => !r.del), Y = String(new Date().getFullYear());
   if (key === 'savYear') return L('savings').filter(s => String(s.ym || '').startsWith(Y)).reduce((a, s) => a + (+s.amount || 0), 0);
+  if (key === 'loan' || key === 'invest') { const side = key === 'loan' ? '부채' : '자산', grp = key === 'loan' ? '대출' : '투자'; return L('assets').filter(r => r.side === side && r.group === grp).reduce((a, r) => a + (+r.amount || 0), 0); } // 자산·부채 화면의 묶음(group) 합계
   if (key === 'net' || key === 'debt' || key === 'assets') { let a = 0, l = 0; for (const r of L('assets')) { const v = +r.amount || 0; if (r.side === '부채') l += v; else a += v; } return key === 'net' ? a - l : key === 'debt' ? l : a; }
   if (key === 'lifeMonth') { const ym = today().slice(0, 7), bm = new Map(((ledger.meta || {}).categories || []).map(c => [c.name, c.block])); let s = 0; for (const t of L('tx')) if (t.date && t.date.startsWith(ym) && (bm.get(t.cat) || '변동') !== '특별') s += +t.amount || 0; return s; }
   return null;

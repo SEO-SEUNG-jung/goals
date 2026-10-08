@@ -665,7 +665,7 @@ async function loadLedger(force) {
   LDAYS = new Set(); for (const t of ledger.tx || []) if (!t.del && t.upd > 1e12) LDAYS.add(ds(new Date(t.upd)));
   return JSON.stringify([ledgerSrc, (ledger.tx || []).length, ledger.meta && ledger.meta.upd]) !== before;
 }
-const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
+const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wSalesYear', '업무: 그 해 매출액(수임 기준·VAT 포함)'], ['wSalesRange', '업무: 목표 기간 누적 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
 const metricValue = (key, g) => !key ? null : key[0] === 'w' ? workMetric(key, g) : ledgerMetric(key); // g: ëª©í(ì ëª©íë©´ ê·¸ ë¬ ê¸°ì¤ì¼ë¡ ê³ì°)
 function ledgerMetric(key) {
   if (!ledger) return null;
@@ -706,7 +706,12 @@ function workMetric(key, g) {
   if (!work) return null;
   const cases = work.cases || [], Y = new Date().getFullYear(), ym = today().slice(0, 7);
   // ê·¸ ë¬ ë§¤ì¶ì¡ = ìë¬´ê´ë¦¬ ëìë³´ë ãìë³ ë§¤ì¶ì¡ã(ììì ê¸°ì¤, VAT í¬í¨: ììë£+ë¶ê°ì¸+ê¸°í). ì ëª©íë©´ ê·¸ ëª©íì ë¬, ìëë©´ ì´ë² ë¬
-  if (key === 'wSalesMonth') { const m = g && g.level === 'month' && /^\d{4}-\d{2}$/.test(String(g.period)) ? String(g.period) : ym; return cases.filter(c => String(c.acceptDate || '').startsWith(m)).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + wBillTotal(b), 0), 0); }
+  // 매출액 3가지(모두 수임 기준·VAT 포함): 그 달 / 그 해 / 목표 기간 누적(예: 2026~2030)
+  const sales = from => to => cases.filter(c => { const d = String(c.acceptDate || ''); return d && d.slice(0, from.length) >= from && d.slice(0, to.length) <= to; }).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + wBillTotal(b), 0), 0);
+  const per = String((g && g.period) || '');
+  if (key === 'wSalesMonth') { const m = g && g.level === 'month' && /^\d{4}-\d{2}$/.test(per) ? per : ym; return sales(m)(m); }
+  if (key === 'wSalesYear') { const y = /^\d{4}$/.test(per) ? per : String(Y); return sales(y)(y); }
+  if (key === 'wSalesRange') { const r = per.match(/(\d{4})\s*~\s*(\d{4})/); return r ? sales(r[1])(r[2]) : /^\d{4}$/.test(per) ? sales(per)(per) : sales('0000')('9999'); }
   if (key === 'wCountYear') return cases.filter(c => wCaseYear(c) === Y).length;
   if (key === 'wFeeYear') return cases.filter(c => wCaseYear(c) === Y).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + (b.fee || 0), 0), 0);
   if (key === 'wPaidYear' || key === 'wPaidMonth') { let s = 0; for (const c of cases) for (const b of c.billings || []) if (b.paidDate && wBillTotal(b) && (key === 'wPaidYear' ? +b.paidDate.slice(0, 4) === Y : b.paidDate.startsWith(ym))) s += b.fee || 0; return s; }

@@ -304,6 +304,10 @@ div.lv-month:not(.goal){margin-left:32px;margin-bottom:6px}
 .gcur,.gnote{font-size:12px;color:var(--muted);margin-top:4px}
 .gadd{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .addg{border-style:dashed}
+/* 하위 목표 추가 버튼: 목표 칸에 마우스를 올렸을 때만 보임(터치 화면은 항상 보임) */
+.goal .gchild{visibility:hidden;font-size:12px;padding:1px 8px;white-space:nowrap}
+.goal:hover .gchild,.goal:focus-within .gchild{visibility:visible}
+@media (hover:none){.goal .gchild{visibility:visible}}
 .rtable{min-width:640px}
 .rtable th,.rtable td{text-align:center}
 .rtable td:first-child,.rtable th:first-child{text-align:left}
@@ -907,13 +911,13 @@ function editRoutine(id) {
 /* ====================== 화면: 목표 ====================== */
 VIEWS.goal = () => {
   const Y = ui.gy, M = ui.gm, ym = ymOf(Y, M);
-  const gRow = (g, cls) => {
+  const gRow = (g, cls, child = '') => { // child: 이 목표 아래에 하위 목표를 추가하는 버튼(마우스를 올리면 보임)
     const p = goalProgress(g), cur = goalCurrent(g);
     return `<div class="goal ${cls}${g.status === '완료' ? ' done' : ''}${g.status === '보류' ? ' hold' : ''}">
-      <div class="gtop"><button class="link gtitle" data-act="goalEdit" data-id="${esc(g.id)}">${esc(g.title)}</button><span class="gper">${esc(periodLabel(g))}${g.status !== '진행' && g.status ? ' · ' + esc(g.status) : ''}</span><b class="gp">${pctTxt(p)}</b></div>
+      <div class="gtop"><button class="link gtitle" data-act="goalEdit" data-id="${esc(g.id)}">${esc(g.title)}</button><span class="gper">${esc(periodLabel(g))}${g.status !== '진행' && g.status ? ' · ' + esc(g.status) : ''}</span>${child}<b class="gp">${pctTxt(p)}</b></div>
       ${bar(p, g.status === '완료' ? 'done' : '')}${cur ? `<div class="gcur">${cur}</div>` : ''}${g.note ? `<div class="gnote">${esc(g.note)}</div>` : ''}</div>`;
   };
-  const addBtn = (label, area, level, parent) => `<button class="sm addg" data-act="goalAdd" data-area="${esc(area)}" data-level="${level}" data-parent="${esc(parent || '')}">+ ${label}</button>`;
+  const addBtn = (label, area, level, parent, extra = '') => `<button class="sm addg${extra}" data-act="goalAdd" data-area="${esc(area)}" data-level="${level}" data-parent="${esc(parent || '')}">+ ${label}</button>`;
   const cards = areas().map(a => {
     const longs = goalsOf(a.id, 'long', null, undefined);
     const years = goalsOf(a.id, 'year', Y, undefined);
@@ -921,11 +925,10 @@ VIEWS.goal = () => {
     const yp = years.map(g => goalProgress(g)).filter(p => p != null);
     let h = '';
     const monthsUnder = y => months.filter(m => m.parent === y.id);
-    const yearBlock = y => gRow(y, 'lv-year') + monthsUnder(y).map(m => gRow(m, 'lv-month')).join('') + `<div class="lv-month">${addBtn(`${M}월 목표`, a.id, 'month', y.id)}</div>`;
+    const yearBlock = y => gRow(y, 'lv-year', addBtn(`${M}월 목표`, a.id, 'month', y.id, ' gchild')) + monthsUnder(y).map(m => gRow(m, 'lv-month')).join('');
     for (const L of longs) {
-      h += gRow(L, 'lv-long');
+      h += gRow(L, 'lv-long', addBtn(`${Y}년 목표`, a.id, 'year', L.id, ' gchild'));
       h += years.filter(y => y.parent === L.id).map(yearBlock).join('');
-      h += `<div class="lv-year">${addBtn(`${Y}년 목표`, a.id, 'year', L.id)}</div>`;
     }
     const orphanY = years.filter(y => !y.parent || !longs.some(L => L.id === y.parent));
     const orphanM = months.filter(m => !m.parent || !years.some(y => y.id === m.parent));

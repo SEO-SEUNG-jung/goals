@@ -273,6 +273,16 @@ button.nav{width:40px;height:36px;padding:0;font-size:14px}
 .task .tt small{color:var(--muted);font-size:11px}
 .task.on .tt{color:var(--muted);text-decoration:line-through}
 button.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+a.wk{display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;border:1px solid var(--line);border-left:4px solid var(--c2);border-radius:8px;color:var(--text);text-decoration:none;background:var(--panel)}
+a.wk:hover{background:var(--panel-2)}
+a.wk.late{border-left-color:var(--neg)}
+a.wk.lead{border-left-color:var(--c3)}
+a.wk .tt{flex:1;display:flex;flex-direction:column;min-width:0;font-weight:600}
+a.wk .tt small{font-weight:400;color:var(--muted);font-size:12px}
+a.wk .wd2{font-size:12px;color:var(--muted);white-space:nowrap}
+a.wk.late .wd2{color:var(--neg);font-weight:700}
+a.link{color:var(--accent-2);text-decoration:none;font-size:13px}
+.grp-h.neg{color:var(--neg)}
 .overdue{margin-top:12px;padding-top:6px;border-top:2px dashed var(--line)}
 textarea{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line-2);border-radius:7px;padding:8px;width:100%;resize:vertical}
 textarea:focus{outline:2px solid var(--accent-2);outline-offset:-1px;border-color:transparent}
@@ -641,7 +651,8 @@ async function loadLedger(force) {
   LDAYS = new Set(); for (const t of ledger.tx || []) if (!t.del && t.upd > 1e12) LDAYS.add(ds(new Date(t.upd)));
   return JSON.stringify([ledgerSrc, (ledger.tx || []).length, ledger.meta && ledger.meta.upd]) !== before;
 }
-const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)']];
+const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
+const metricValue = key => !key ? null : key[0] === 'w' ? workMetric(key) : ledgerMetric(key);
 function ledgerMetric(key) {
   if (!ledger) return null;
   const L = c => (ledger[c] || []).filter(r => !r.del), Y = String(new Date().getFullYear());
@@ -649,6 +660,60 @@ function ledgerMetric(key) {
   if (key === 'net' || key === 'debt' || key === 'assets') { let a = 0, l = 0; for (const r of L('assets')) { const v = +r.amount || 0; if (r.side === '부채') l += v; else a += v; } return key === 'net' ? a - l : key === 'debt' ? l : a; }
   if (key === 'lifeMonth') { const ym = today().slice(0, 7), bm = new Map(((ledger.meta || {}).categories || []).map(c => [c.name, c.block])); let s = 0; for (const t of L('tx')) if (t.date && t.date.startsWith(ym) && (bm.get(t.cat) || '변동') !== '특별') s += +t.amount || 0; return s; }
   return null;
+}
+
+/* ====================== 업무관리(번영손해사정) 연결 (읽기 전용) ======================
+   업무관리 데이터 파일은 읽기만 하고 절대 쓰지 않음. 숫자는 업무관리 대시보드와 같은 기준으로 계산 */
+const K_WPATH = 'mokpyo.workPath', WORK_DEFAULT = '/번영손해사정/번영손해사정_데이터.json';
+const WORK_URL_WEB = 'https://seo-seung-jung.github.io/beonyoung/', WORK_URL_FILE = '../번영손해사정/번영손해사정_업무관리.html';
+const WORK_DONE = '종결(수수료 입금)', LEAD_OPEN = ['사고 인지', '상담 진행', '보류'];
+let work = null, workAt = 0, workSrc = '';
+const workUrl = hash => (location.protocol === 'https:' ? WORK_URL_WEB : WORK_URL_FILE) + (hash || '');
+async function loadWork(force) {
+  if (!force && work && Date.now() - workAt < 300000) return false;
+  const sig = w => w ? JSON.stringify([(w.meta || {}).rev, (w.meta || {}).savedAtIso, (w.cases || []).length]) : '';
+  const before = sig(work) + workSrc;
+  let d = null, src = '';
+  try {
+    if (store && store.kind === 'ms') {
+      const p = lsGet(K_WPATH) || WORK_DEFAULT;
+      const r = await gfetch('/me/drive/root:' + p.split('/').map(encodeURIComponent).join('/'));
+      if (r.ok) { const j = await r.json(); const c = await fetch(j['@microsoft.graph.downloadUrl'], { cache: 'no-store' }); const x = JSON.parse(await c.text()); if (x && Array.isArray(x.cases)) { d = x; src = 'OneDrive 업무관리'; } }
+    }
+  } catch (e) { }
+  if (!d) { try { const x = JSON.parse(lsGet('byeongyoung_adjust_v1') || 'null'); if (x && Array.isArray(x.cases)) { d = x; src = '이 기기에서 연 업무관리'; } } catch (e) { } }
+  if (!d) return false;
+  work = d; workAt = Date.now(); workSrc = src;
+  return sig(work) + workSrc !== before;
+}
+const wCaseYear = c => c.acceptDate ? +c.acceptDate.slice(0, 4) : (c.year || new Date().getFullYear());
+const wBillTotal = b => (b.fee || 0) + (b.vat || 0) + (b.extra || 0);
+const wTodos = c => Array.isArray(c.todos) ? c.todos : (c.nextAction || c.dueDate) ? [{ id: 't0', text: c.nextAction || '', due: c.dueDate || '' }] : [];
+function workMetric(key) {
+  if (!work) return null;
+  const cases = work.cases || [], Y = new Date().getFullYear(), ym = today().slice(0, 7);
+  if (key === 'wCountYear') return cases.filter(c => wCaseYear(c) === Y).length;
+  if (key === 'wFeeYear') return cases.filter(c => wCaseYear(c) === Y).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + (b.fee || 0), 0), 0);
+  if (key === 'wPaidYear' || key === 'wPaidMonth') { let s = 0; for (const c of cases) for (const b of c.billings || []) if (b.paidDate && wBillTotal(b) && (key === 'wPaidYear' ? +b.paidDate.slice(0, 4) === Y : b.paidDate.startsWith(ym))) s += b.fee || 0; return s; }
+  if (key === 'wOpen') return cases.filter(c => c.stage !== WORK_DONE).length;
+  if (key === 'wLeadWin') return (work.leads || []).filter(l => l.stage === '수임 성공' && String(l.contactDate || '').startsWith(String(Y))).length;
+  return null;
+}
+// 이날 할 업무: 미결 사건의 할 일 중 기한 지남(오늘 볼 때만)·이날 마감·이날이 기간 안 + 연락일이 된 영업 리드
+function workItemsOn(d) {
+  if (!work) return { late: [], on: [], leads: [] };
+  const isT = d === today(), late = [], on = [];
+  for (const c of work.cases || []) {
+    if (c.stage === WORK_DONE) continue;
+    for (const t of wTodos(c)) {
+      if (!t.due && !t.start) continue;
+      if (t.due && t.due < d) { if (isT) late.push({ c, t }); }
+      else if (t.due === d || (t.start && t.start <= d && (!t.due || t.due >= d))) on.push({ c, t });
+    }
+  }
+  const byDue = (a, b) => String(a.t.due || '').localeCompare(String(b.t.due || ''));
+  const leads = (work.leads || []).filter(l => LEAD_OPEN.includes(l.stage) && l.nextDate && (isT ? l.nextDate <= d : l.nextDate === d)).sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+  return { late: late.sort(byDue), on: on.sort(byDue), leads };
 }
 
 /* ====================== 루틴 계산 ====================== */
@@ -695,7 +760,7 @@ function goalProgress(g, depth = 0) {
   if (g.status === '완료') return 1;
   if (pm === 'manual') return clamp((+g.pct || 0) / 100);
   if (pm === 'number') {
-    const cur = g.metric ? ledgerMetric(g.metric) : (g.current === '' || g.current == null ? null : +g.current);
+    const cur = g.metric ? metricValue(g.metric) : (g.current === '' || g.current == null ? null : +g.current);
     if (cur == null || g.target === '' || g.target == null) return null;
     const st = +g.start || 0, tg = +g.target;
     return tg === st ? (cur >= tg ? 1 : 0) : clamp((cur - st) / (tg - st));
@@ -707,7 +772,7 @@ function goalProgress(g, depth = 0) {
   if (ts.length) return ts.filter(t => t.done).length / ts.length;
   return null;
 }
-function goalCurrent(g) { if ((g.pmode || 'auto') !== 'number') return ''; const cur = g.metric ? ledgerMetric(g.metric) : g.current; return cur == null || cur === '' ? '' : `${won(cur)}${esc(g.unit || '')} / 목표 ${won(g.target)}${esc(g.unit || '')}`; }
+function goalCurrent(g) { if ((g.pmode || 'auto') !== 'number') return ''; const cur = g.metric ? metricValue(g.metric) : g.current; return cur == null || cur === '' ? '' : `${won(cur)}${esc(g.unit || '')} / 목표 ${won(g.target)}${esc(g.unit || '')}`; }
 const ymOf = (y, m) => `${y}-${pad(m)}`;
 const periodLabel = g => g.level === 'month' ? `${+String(g.period).slice(5, 7)}월` : g.level === 'year' ? `${g.period}년` : (g.period || '');
 
@@ -760,6 +825,7 @@ VIEWS.today = () => {
       ${groups.map(g => `<div class="grp"><div class="grp-h">${esc(g.a.icon)} ${esc(g.a.name)}</div>${g.list.map(rtRow).join('')}</div>`).join('') || `<p class="muted">이날 할 루틴이 없습니다. <button class="link" data-act="go" data-tab="routine">루틴 추가 →</button></p>`}
     </div>
     <div class="stack">
+      ${workCard(d)}
       <div class="card"><h2>할 일</h2>
         <form class="addtask" data-form="task"><input name="title" placeholder="할 일 입력 후 Enter" autocomplete="off" data-keep="taskInput"><select name="goal">${opts(goalOpts, '', '목표 연결 (선택)')}</select><button class="primary" type="submit">추가</button></form>
         <div class="tasks">${tasks.map(t => taskRow(t)).join('') || '<p class="muted">할 일이 없습니다.</p>'}</div>
@@ -771,6 +837,20 @@ VIEWS.today = () => {
     </div>
   </div>`;
 };
+// 「오늘」 화면의 업무 할 일 (업무관리에서 읽어 와 보여 주기만 함. 완료는 업무관리에서)
+function workCard(d) {
+  if (!work) return '';
+  const { late, on, leads } = workItemsOn(d), n = late.length + on.length + leads.length;
+  const due = t => t.due ? (t.start && t.start !== t.due ? `${mlabel(t.start)}~${mlabel(t.due)}` : mlabel(t.due)) : '';
+  const row = ({ c, t }, cls) => `<a class="wk ${cls}" href="${esc(workUrl('#todos'))}" target="_blank" rel="noopener"><span class="tt">${esc(t.text || '다음 할 일 미입력')}<small>${esc(c.name)}</small></span><span class="wd2">${due(t)}</span></a>`;
+  const lrow = l => `<a class="wk lead" href="${esc(workUrl('#leads'))}" target="_blank" rel="noopener"><span class="tt">${esc(l.nextAction || '연락하기')}<small>영업 리드 · ${esc(l.name || '')}</small></span><span class="wd2">${mlabel(l.nextDate)}</span></a>`;
+  return `<div class="card"><h2>💼 업무 할 일 <small>업무관리에서 가져옴 · 누르면 업무관리가 열림 · 완료는 업무관리에서</small></h2>
+    ${late.length ? `<div class="grp-h neg">⚠ 기한 지남 ${late.length}건</div>${late.map(x => row(x, 'late')).join('')}` : ''}
+    ${on.length ? `<div class="grp-h">${d === today() ? '오늘 · 기간 진행 중' : '이날 할 일'} ${on.length}건</div>${on.map(x => row(x, '')).join('')}` : ''}
+    ${leads.length ? `<div class="grp-h">연락할 영업 리드 ${leads.length}건</div>${leads.map(lrow).join('')}` : ''}
+    ${n ? '' : `<p class="muted">${d === today() ? '오늘 처리할 업무 할 일이 없습니다.' : '이날 마감인 업무 할 일이 없습니다.'}</p>`}
+    <div style="margin-top:6px"><a class="link" href="${esc(workUrl('#todos'))}" target="_blank" rel="noopener">업무관리 할 일 전체 보기 →</a></div></div>`;
+}
 function taskRow(t, old) {
   const g = t.goal ? live('goals').find(x => x.id === t.goal) : null;
   return `<div class="task${t.done ? ' on' : ''}"><button class="tck" data-act="taskToggle" data-id="${esc(t.id)}" aria-label="완료">${t.done ? '✓' : ''}</button><span class="tt">${esc(t.title)}${g ? `<small>${esc(areaOf(g.area).icon)} ${esc(g.title)}</small>` : ''}${old ? `<small>${mlabel(t.date)}</small>` : ''}</span>${old ? `<button class="sm" data-act="taskToday" data-id="${esc(t.id)}">오늘로</button>` : ''}<button class="sm ghost" data-act="taskDel" data-id="${esc(t.id)}" aria-label="삭제">×</button></div>`;
@@ -875,7 +955,7 @@ function editGoal(id, preset) {
     <label class="field"><span>진행률 계산</span><select name="pmode">${opts([['auto', '자동 (하위 목표·연결된 할 일)'], ['manual', '직접 % 입력'], ['number', '숫자 목표 (현재값 / 목표값)']], g.pmode)}</select></label>
     <label class="field"><span>상태</span><select name="status">${opts(STATUS, g.status)}</select></label>
     <label class="field" data-pm="manual"><span>진행률 (%)</span><input name="pct" type="number" min="0" max="100" value="${esc(g.pct ?? 0)}"></label>
-    <label class="field" data-pm="number"><span>가계부 값 연결</span><select name="metric">${opts(METRICS, g.metric)}</select></label>
+    <label class="field" data-pm="number"><span>가계부·업무 값 연결</span><select name="metric">${opts(METRICS, g.metric)}</select></label>
     <label class="field" data-pm="number"><span>단위 (예: 원, kg, 권)</span><input name="unit" value="${esc(g.unit || '')}"></label>
     <label class="field" data-pm="number"><span>시작값</span><input name="start" inputmode="decimal" value="${esc(g.start ?? '')}" placeholder="0"></label>
     <label class="field" data-pm="number"><span>목표값</span><input name="target" inputmode="decimal" value="${esc(g.target ?? '')}"></label>
@@ -940,6 +1020,10 @@ VIEWS.set = () => {
       <p class="help">${ledger ? `불러옴: ${esc(ledgerSrc)} · 지출 ${lc.toLocaleString()}건` : '아직 가계부 데이터를 불러오지 못했습니다.'}<br>「가계부 정리」 같은 루틴에 <b>가계부 자동</b>을 켜면 그날 가계부에 지출을 입력했을 때 자동으로 체크됩니다. 숫자 목표는 가계부의 저축·투자, 순자산, 총부채 등을 현재값으로 쓸 수 있습니다.</p>
       ${storeMode() === 'ms' ? `<div class="toolbar"><span class="hint">가계부 파일 위치</span><input id="ledgerPath" value="${esc(lsGet(K_LPATH) || LEDGER_DEFAULT)}" style="flex:1;min-width:180px"><button data-act="saveLedgerPath">바꾸기</button></div>` : '<p class="help">PC에서는 이 PC에서 마지막으로 연 가계부 내용을 씁니다.</p>'}
       <button data-act="ledgerReload">다시 불러오기</button></div>
+    <div class="card"><h2>업무관리 연결 <small>읽기만 함</small></h2>
+      <p class="help">${work ? `불러옴: ${esc(workSrc)} · 사건 ${(work.cases || []).length}건 · 미결 ${workMetric('wOpen')}건${(work.meta || {}).savedAtIso ? ` · 업무관리 마지막 저장 ${esc(String(work.meta.savedAtIso).slice(0, 16).replace('T', ' '))}` : ''}` : '아직 업무관리 데이터를 불러오지 못했습니다.'}<br>「오늘」 화면에 기한이 지났거나 오늘인 업무 할 일과 연락할 영업 리드가 보입니다(완료 처리는 업무관리에서). 숫자 목표는 올해 수임액·입금액·수임 건수·미결 사건 수 등을 현재값으로 쓸 수 있습니다.</p>
+      ${storeMode() === 'ms' ? `<div class="toolbar"><span class="hint">업무관리 파일 위치</span><input id="workPath" value="${esc(lsGet(K_WPATH) || WORK_DEFAULT)}" style="flex:1;min-width:180px"><button data-act="saveWorkPath">바꾸기</button></div>` : '<p class="help">PC에서는 이 PC에서 마지막으로 연 업무관리 내용을 씁니다.</p>'}
+      <button data-act="workReload">다시 불러오기</button> <a class="link" href="${esc(workUrl(''))}" target="_blank" rel="noopener">업무관리 열기 →</a></div>
   </div>`;
 };
 
@@ -977,6 +1061,8 @@ const ACT = {
   useMode: b => { const m = b.dataset.mode; if (m === storeMode()) return; lsSet(K_MODE, m); store = null; connected = false; lastErr = ''; renderBanner(); setStatus(); render(); connect(); },
   msLogout: () => { if (confirm('Microsoft 계정에서 로그아웃할까요? (가계부도 함께 로그아웃됩니다)')) msLogout(); },
   saveLedgerPath: () => { const v = $('#ledgerPath').value.trim(); if (!v) return; lsSet(K_LPATH, v.startsWith('/') ? v : '/' + v); ACT.ledgerReload(); },
+  saveWorkPath: () => { const v = $('#workPath').value.trim(); if (!v) return; lsSet(K_WPATH, v.startsWith('/') ? v : '/' + v); ACT.workReload(); },
+  workReload: async () => { await loadWork(true); render(); toast(work ? '업무관리 데이터를 다시 불러왔습니다' : '업무관리 데이터를 찾지 못했습니다'); },
   ledgerReload: async () => { await loadLedger(true); render(); toast(ledger ? '가계부 데이터를 다시 불러왔습니다' : '가계부 데이터를 찾지 못했습니다'); },
   backup: () => download(`목표관리_백업_${today()}.json`, JSON.stringify(doc), 'application/json'),
   importMerge: () => $('#importFile').click(),
@@ -1021,13 +1107,13 @@ main.addEventListener('change', e => {
     if (stored) { try { if (await stored.queryPermission({ mode: 'readwrite' }) === 'granted') { fh = stored; store = fileStore(fh); await openStore(); } } catch (e) { lastErr = ''; } }
   }
   renderBanner(); setStatus();
-  if (await loadLedger(true)) safeRender(); else render();
-  setInterval(async () => { if (!document.hidden && await loadLedger()) safeRender(); }, 60000);
+  const l1 = await loadLedger(true), w1 = await loadWork(true); if (l1 || w1) safeRender(); else render();
+  setInterval(async () => { if (document.hidden) return; const a = await loadLedger(), b = await loadWork(); if (a || b) safeRender(); }, 60000);
   // 날짜가 바뀌면(자정이 지나면) 오늘 화면을 새 날짜로
   let lastDay = today();
   setInterval(() => { const t = today(); if (t !== lastDay) { if (ui.date === lastDay) ui.date = t; ui.week = weekStart(t); lastDay = t; safeRender(); } }, 60000);
 })();
-window.__mokpyo = { load: d => { doc = normalize(d); render(); }, get doc() { return doc; }, setLedger: d => { ledger = d; ledgerAt = Date.now(); ledgerSrc = 'test'; LDAYS = new Set(); for (const t of d.tx || []) if (!t.del && t.upd > 1e12) LDAYS.add(ds(new Date(t.upd))); render(); } };
+window.__mokpyo = { load: d => { doc = normalize(d); render(); }, setWork: d => { work = d; workAt = Date.now(); workSrc = "test"; render(); }, get doc() { return doc; }, setLedger: d => { ledger = d; ledgerAt = Date.now(); ledgerSrc = 'test'; LDAYS = new Set(); for (const t of d.tx || []) if (!t.del && t.upd > 1e12) LDAYS.add(ds(new Date(t.upd))); render(); } };
 </script>
 </body>
 </html>

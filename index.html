@@ -254,27 +254,16 @@ button.nav{width:40px;height:36px;padding:0;font-size:14px}
 .badge{font-size:11px;background:var(--accent);color:#fff;border-radius:999px;padding:2px 8px}
 .grp{margin-bottom:10px}
 .grp-h{font-size:12px;font-weight:700;color:var(--muted);margin:6px 2px;display:flex;justify-content:space-between;align-items:center}
-/* 「오늘」 화면: 루틴은 한 주 체크표(2026-10-09), To-do는 넘어온 일·오늘·완료·예정으로 구분 */
-.wtable{width:100%;table-layout:fixed}
-.wtable col.dcol{width:50px}
-.wtable col.wcol{width:62px}
-.wtable th,.wtable td{text-align:center;padding:4px 2px}
-.wtable th:first-child,.wtable td:first-child{text-align:left;padding-left:6px}
-.wtable th small{display:block;font-weight:400;font-size:11px;color:var(--muted)}
-.wtable th.today small{color:inherit}
-.wtable th.sel,.wtable td.sel{background:var(--accent-soft)}
-.wtable th.today{background:var(--accent-2);color:#fff}
-.wtable tr.blk td{text-align:left;font-weight:700;padding:8px 6px 4px}
-.wtable td.rn{text-align:left}
-.wtable td.rn .ic{font-size:17px;width:22px;display:inline-block;text-align:center;vertical-align:middle;margin-right:6px}
-.wtable td.rn .nm{display:inline-flex;flex-direction:column;vertical-align:middle;font-weight:600;font-size:14.5px;line-height:1.3;overflow-wrap:anywhere;max-width:calc(100% - 32px)}
-.wtable td.rn .nm small{font-weight:400;font-size:11.5px;color:var(--muted)}
-.wtable td.cell{padding:3px 1px}
-.wtable .ckc{width:32px;height:32px}
-.wtable td.wkc{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
-.wtable td.wkc.full{color:var(--pos);font-weight:700}
-.wtable td.rn,.wtable td.rn .nm{white-space:normal}
-@media (max-width:640px){.wtable col.dcol{width:29px}.wtable col.wcol{width:0}.wtable .wkc,.wtable th:last-child{display:none}.wtable .ckc{width:26px;height:26px;font-size:12px}.wtable td.rn .ic{display:none}.wtable td.rn .nm{font-size:13.5px;max-width:100%}.wtable th,.wtable td{padding:3px 1px}}
+.rt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border-radius:10px;border:1px solid var(--line);background:var(--panel)}
+.rt:hover{background:var(--panel-2)}
+.rt .ic{font-size:20px;width:28px;text-align:center;flex:none}
+.rt .nm{flex:1;display:flex;flex-direction:column;font-weight:600;min-width:0}
+.rt .nm small{font-weight:400;color:var(--muted);font-size:12px}
+.rt .ck{width:28px;height:28px;border-radius:50%;border:2px solid var(--line-2);display:grid;place-items:center;font-weight:700;flex:none;color:#fff}
+.rt.on{background:var(--accent-soft);border-color:var(--accent-2)}
+.rt.on .ck{background:var(--pos);border-color:var(--pos)}
+.rt.on .nm{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line-2)}
+/* 「오늘」 화면 (2026-10-08 가독성 정리): 루틴은 영역별 바둑판, To-do는 넘어온 일·오늘·완료·예정으로 구분 */
 .today-grid{display:grid;gap:16px;grid-template-columns:minmax(0,3fr) minmax(320px,2fr);align-items:start}
 @media (max-width:1000px){.today-grid{grid-template-columns:1fr}}
 .today-grid .grp{margin-bottom:0}
@@ -282,12 +271,18 @@ button.nav{width:40px;height:36px;padding:0;font-size:14px}
 .today-grid .grp-h{font-size:13px;color:var(--text);margin:0 2px 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .gcnt{font-size:12px;font-weight:600;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:0 8px;font-variant-numeric:tabular-nums}
 .gcnt.full{color:var(--pos);border-color:var(--pos)}
+.rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.rt-grid .rt{margin-bottom:0;padding:10px 10px}
+.rt-grid .rt .nm{font-size:14.5px;line-height:1.35}
+.rt-grid .rt.on .nm{text-decoration:none;color:var(--text)}
+.rt-grid .rt.on{border-color:var(--pos)}
 .tdsec+.tdsec{margin-top:14px}
 .tdsec .grp-h{font-size:13px;color:var(--text);margin:0 2px 4px}
 .tdsec .grp-h.late{color:var(--neg)}
 .tdsec .grp-h.dim{color:var(--muted)}
 .tdsec .task{padding:9px 2px;font-size:15px}
 .tdsec .task .tt small{font-size:12px}
+@media (max-width:640px){.rt-grid{grid-template-columns:1fr;gap:6px}.rt-grid .rt{padding:8px 10px}}
 .addtask{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .addtask input{flex:1 1 180px}
 .addtask input[type=date]{flex:0 1 150px}
@@ -810,15 +805,13 @@ const bar = (p, cls = '') => `<div class="pbar ${cls}"><i style="width:${p == nu
 /* ====================== 화면: 오늘 ====================== */
 VIEWS.today = () => {
   const d = ui.date, isToday = d === today(), st = dayStat(d), ws = weekStart(d);
+  const rs = routinesSorted().filter(r => isWeekly(r) ? activeOn(r, d) : scheduled(r, d));
   const todos = todosOn(d), upcoming = isToday ? live('todos').filter(t => !t.done && t.date > d).sort((a, b) => a.date.localeCompare(b.date)) : [];
-  // 루틴: 고른 날이 속한 주(월~일) 체크표. 칸을 누르면 그날 체크/해제(루틴 탭과 같은 cellToggle), 고른 날 칸은 강조
-  const t = today(), days = [...Array(7).keys()].map(i => addDays(ws, i));
-  const rs = routinesSorted().filter(r => days.some(x => activeOn(r, x)));
   const groups = areas().map(a => ({ a, list: rs.filter(r => r.area === a.id) })).concat([{ a: { id: '', name: '기타', icon: '📌' }, list: rs.filter(r => !areas().some(a => a.id === r.area)) }]).filter(g => g.list.length);
-  const cell = (r, x) => { const on = isDone(r, x), sc = scheduled(r, x); return `<td class="cell${x === d ? ' sel' : ''}"><button class="ckc${on ? ' on' : ''}${!sc ? ' na' : ''}${isAuto(r, x) ? ' auto' : ''}" data-act="cellToggle" data-id="${esc(r.id)}" data-d="${x}" title="${mlabel(x)}" ${x > t ? 'disabled' : ''}>${on ? '✓' : sc ? '' : '·'}</button></td>`; };
   const rtRow = r => {
-    const wk = isWeekly(r), wd = weekDone(r, ws), goal = wk ? (r.freq.n || 1) : days.filter(x => x <= t && scheduled(r, x)).length, s = streak(r);
-    return `<tr><td class="rn"><span class="ic">${esc(r.icon || '✔️')}</span><span class="nm">${esc(r.name)}${wk ? `<small>이번 주 ${wd}/${r.freq.n || 1}회</small>` : s >= 2 ? `<small>🔥${s}일</small>` : ''}</span></td>${days.map(x => cell(r, x)).join('')}<td class="wkc${goal && wd >= goal ? ' full' : ''}">${wd}/${goal}</td></tr>`;
+    const done = isDone(r, d), wk = isWeekly(r), s = streak(r);
+    const meta = wk ? `이번 주 ${weekDone(r, ws)}/${r.freq.n || 1}` : (s ? `🔥 ${s}일 연속` : freqText(r));
+    return `<button class="rt${done ? ' on' : ''}" data-act="rtToggle" data-id="${esc(r.id)}"><span class="ic">${esc(r.icon || '✔️')}</span><span class="nm">${esc(r.name)}<small>${meta}${isAuto(r, d) ? ' · 가계부 입력으로 자동 체크' : ''}</small></span><span class="ck">${done ? '✓' : ''}</span></button>`;
   };
   const monthGoals = live('goals').filter(g => g.level === 'month' && g.period === d.slice(0, 7) && g.status !== '보류');
   return `
@@ -828,10 +821,8 @@ VIEWS.today = () => {
     <button class="nav" data-act="dayMove" data-n="1" aria-label="다음날">▶</button>
   </div>
   <div class="today-grid">
-    <div class="card"><h2>루틴 체크표 <small>${mlabel(ws)} ~ ${mlabel(days[6])} · ${isToday ? '오늘' : '이날'} ${st.all - st.done ? `남은 루틴 ${st.all - st.done}개` : st.all ? '모두 완료 🎉' : '루틴 없음'}</small></h2>
-      ${groups.length ? `<div class="tablewrap"><table class="grid wtable"><colgroup><col><col span="7" class="dcol"><col class="wcol"></colgroup><thead><tr><th>루틴</th>${days.map(x => `<th class="${x === d ? 'sel' : ''}${x === t ? ' today' : ''}">${DOW[pd(x).getDay()]}<small>${pd(x).getDate()}</small></th>`).join('')}<th>이번 주</th></tr></thead><tbody>
-        ${groups.map(g => { const daily = g.list.filter(r => !isWeekly(r) && scheduled(r, d)), n = daily.filter(r => isDone(r, d)).length; /* 영역 숫자: 고른 날의 매일 루틴(주 N회 제외) */ return `<tr class="blk"><td colspan="9">${esc(g.a.icon)} ${esc(g.a.name)}${daily.length ? ` <span class="gcnt${n === daily.length ? ' full' : ''}">${n}/${daily.length}</span>` : ''}</td></tr>${g.list.map(rtRow).join('')}`; }).join('')}
-      </tbody></table></div><p class="help">칸을 누르면 그날 체크, 다시 누르면 해제. 「·」은 쉬는 날, 파란 칸은 가계부 입력으로 자동 체크된 날.</p>` : `<p class="muted">이번 주 루틴이 없습니다. <button class="link" data-act="go" data-tab="routine">루틴 추가 →</button></p>`}
+    <div class="card"><h2>${isToday ? '오늘의' : '이날'} 루틴 <small>${st.all - st.done ? `남은 루틴 ${st.all - st.done}개` : st.all ? '모두 완료 🎉' : ''} · 누르면 체크, 다시 누르면 해제</small></h2>
+      ${groups.map(g => { const daily = g.list.filter(r => !isWeekly(r)), n = daily.filter(r => isDone(r, d)).length; /* 영역 숫자: 매일 루틴만(주 N회 루틴 제외) */ return `<div class="grp"><div class="grp-h"><span>${esc(g.a.icon)} ${esc(g.a.name)}</span>${daily.length ? `<span class="gcnt${n === daily.length ? ' full' : ''}">${n}/${daily.length}</span>` : ''}</div><div class="rt-grid">${g.list.map(rtRow).join('')}</div></div>`; }).join('') || `<p class="muted">이날 할 루틴이 없습니다. <button class="link" data-act="go" data-tab="routine">루틴 추가 →</button></p>`}
     </div>
     <div class="stack">
       <div class="card"><h2>${isToday ? '오늘의' : '이날'} To-do <small>못 한 것은 다음 날로 자동으로 넘어감</small></h2>

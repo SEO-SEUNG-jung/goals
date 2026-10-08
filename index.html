@@ -666,7 +666,13 @@ async function loadLedger(force) {
   return JSON.stringify([ledgerSrc, (ledger.tx || []).length, ledger.meta && ledger.meta.upd]) !== before;
 }
 const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wSalesYear', '업무: 그 해 매출액(수임 기준·VAT 포함)'], ['wSalesRange', '업무: 목표 기간 누적 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
-const metricValue = (key, g) => !key ? null : key[0] === 'w' ? workMetric(key, g) : ledgerMetric(key); // g: ëª©í(ì ëª©íë©´ ê·¸ ë¬ ê¸°ì¤ì¼ë¡ ê³ì°)
+const metricValue = (key, g) => !key ? null : key.startsWith('rt:') ? routineMetric(key.slice(3), g) : key[0] === 'w' ? workMetric(key, g) : ledgerMetric(key); // g: ëª©í(ì ëª©íë©´ ê·¸ ë¬ ê¸°ì¤ì¼ë¡ ê³ì°)
+function routineMetric(rid, g) { // 루틴 연결(rt:루틴id): 그 달(월 목표면 목표의 달, 아니면 이번 달)에 그 루틴을 한 날 수
+  const r = (doc.routines || []).find(x => x.id === rid && !x.del); if (!r) return null;
+  const per = String((g && g.period) || ''), m = g && g.level === 'month' && /^\d{4}-\d{2}$/.test(per) ? per : today().slice(0, 7);
+  let n = 0; for (let d = m + '-01'; d.slice(0, 7) === m && d <= today(); d = addDays(d, 1)) if (isDone(r, d)) n++;
+  return n;
+}
 function ledgerMetric(key) {
   if (!ledger) return null;
   const L = c => (ledger[c] || []).filter(r => !r.del), Y = String(new Date().getFullYear());
@@ -950,7 +956,7 @@ function editGoal(id, preset) {
     <label class="field"><span>진행률 계산</span><select name="pmode">${opts([['auto', '자동 (하위 목표 평균)'], ['manual', '직접 % 입력'], ['number', '숫자 목표 (현재값 / 목표값)']], g.pmode)}</select></label>
     <label class="field"><span>상태</span><select name="status">${opts(STATUS, g.status)}</select></label>
     <label class="field" data-pm="manual"><span>진행률 (%)</span><input name="pct" type="number" min="0" max="100" value="${esc(g.pct ?? 0)}"></label>
-    <label class="field" data-pm="number"><span>가계부·업무 값 연결</span><select name="metric">${opts(METRICS, g.metric)}</select></label>
+    <label class="field" data-pm="number"><span>가계부·업무·루틴 값 연결</span><select name="metric">${opts(METRICS.concat(routinesSorted().map(r => ['rt:' + r.id, `루틴: ${r.name} — 그 달 한 날 수`])), g.metric)}</select></label>
     <label class="field" data-pm="number"><span>단위 (예: 원, kg, 권)</span><input name="unit" value="${esc(g.unit || '')}"></label>
     <label class="field" data-pm="number"><span>시작값</span><input name="start" inputmode="decimal" value="${esc(g.start ?? '')}" placeholder="0"></label>
     <label class="field" data-pm="number"><span>목표값</span><input name="target" inputmode="decimal" value="${esc(g.target ?? '')}"></label>

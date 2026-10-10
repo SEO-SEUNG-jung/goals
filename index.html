@@ -298,6 +298,10 @@ a.link{color:var(--accent-2);text-decoration:none;font-size:13px}
 .overdue{margin-top:12px;padding-top:6px;border-top:2px dashed var(--line)}
 textarea{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line-2);border-radius:7px;padding:8px;width:100%;resize:vertical}
 textarea:focus{outline:2px solid var(--accent-2);outline-offset:-1px;border-color:transparent}
+.gev{display:grid;grid-template-columns:48px minmax(0,1fr);gap:8px;padding:6px 2px;border-bottom:1px solid var(--line);font-size:14px}
+.gev:last-child{border-bottom:none}
+.gev .gt{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
+.gev .gn small{display:block;color:var(--muted);font-size:12px}
 .gmini{display:grid;grid-template-columns:minmax(0,1fr) 34% 44px;gap:8px;align-items:center;padding:5px 0;font-size:13px}
 .gmini .pbar{margin:0}
 .gmini b{text-align:right;font-variant-numeric:tabular-nums}
@@ -802,6 +806,101 @@ function render() {
 }
 const bar = (p, cls = '') => `<div class="pbar ${cls}"><i style="width:${p == null ? 0 : (p * 100).toFixed(1)}%"></i></div>`;
 
+/* ====================== 구글 캘린더 연동 (2026-10-10) ======================
+   - To-do → 구글 캘린더(기본 캘린더)에 종일 일정으로 만들고, 완료하면 제목 앞에 「✓」, 삭제하면 일정도 삭제.
+     못 한 To-do는 오늘 날짜로 옮겨 둠(오늘 화면의 「넘어온 일」과 같게). 일정에는 private 속성 mokpyo=1, tid=To-do id를 붙여 구분.
+   - 구글 캘린더 → 오늘 화면: 고른 날의 기본 캘린더 일정(위 To-do 일정은 빼고)을 「📅 일정」 카드로 보여 줌.
+   - 로그인: Google Identity Services 토큰 방식(브라우저만, 비밀값 없음). 인터넷 주소(https)에서만 됨(구글이 file:// 주소를 허용하지 않음).
+     토큰은 1시간짜리라 지나면 「다시 연결」 버튼을 한 번 눌러야 함. 데이터 파일에는 아무것도 저장하지 않음(이 기기 localStorage만). */
+const GCAL = {
+  clientId: '',   // 구글 클라우드 「OAuth 클라이언트 ID」 — 비밀번호가 아니라 공개돼도 되는 값. 비어 있으면 연동 기능을 숨김
+  scope: 'https://www.googleapis.com/auth/calendar.events',
+  lib: 'https://accounts.google.com/gsi/client',
+  api: 'https://www.googleapis.com/calendar/v3'
+};
+const K_GTOK = 'mokpyo.gtok', K_GON = 'mokpyo.gcal';
+const gOK = () => !!GCAL.clientId && location.protocol === 'https:';
+let gTok = (() => { try { return JSON.parse(lsGet(K_GTOK) || 'null'); } catch (e) { return null; } })();
+let gClient = null, gSyncing = false, gLast = 0, gcErr = '', gSig = '', gDay = {};
+const gReady = () => gOK() && gTok && gTok.exp > Date.now() + 30000;
+const gWanted = () => gOK() && lsGet(K_GON) === '1';
+async function gLoad() { if (window.google && google.accounts && google.accounts.oauth2) return true; try { await loadScript(GCAL.lib); return true; } catch (e) { gcErr = '구글 로그인 모듈을 불러오지 못했습니다(인터넷 연결 확인)'; return false; } }
+function gConnect() { // 버튼을 누른 직후에 불러야 함(구글 로그인 창은 사용자가 누른 직후에만 열림)
+  if (!gOK()) return;
+  if (!(window.google && google.accounts && google.accounts.oauth2)) { gLoad().then(() => toast('준비됐습니다. 버튼을 한 번 더 눌러 주세요')); return; }
+  gClient = gClient || google.accounts.oauth2.initTokenClient({ client_id: GCAL.clientId, scope: GCAL.scope, callback: r => {
+    if (!r || !r.access_token) { gcErr = '구글 계정 연결이 취소되었습니다'; render(); return; }
+    gTok = { t: r.access_token, exp: Date.now() + (+r.expires_in || 3600) * 1000 }; lsSet(K_GTOK, JSON.stringify(gTok)); lsSet(K_GON, '1');
+    gcErr = ''; gSig = ''; gDay = {}; toast('구글 캘린더에 연결했습니다'); gMaybeSync(true); render();
+  } });
+  gClient.requestAccessToken({ prompt: lsGet(K_GON) === '1' ? '' : 'consent' });
+}
+function gDisconnect() {
+  try { if (gTok && window.google && google.accounts) google.accounts.oauth2.revoke(gTok.t, () => { }); } catch (e) { }
+  gTok = null; lsSet(K_GTOK, ''); lsSet(K_GON, '0'); gDay = {}; gSig = ''; render();
+}
+async function gApi(path, opt = {}) {
+  if (!gReady()) throw new Error('auth');
+  const r = await fetch(GCAL.api + path, Object.assign({}, opt, { headers: { Authorization: 'Bearer ' + gTok.t, 'Content-Type': 'application/json' } }));
+  if (r.status === 401) { gTok = null; lsSet(K_GTOK, ''); throw new Error('auth'); }
+  if (r.status === 204 || r.status === 410) return null; // 삭제 성공 / 이미 지워짐
+  if (!r.ok) throw new Error('구글 캘린더 오류 ' + r.status);
+  return r.json();
+}
+const gIso = d => new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).toISOString();
+const gMine = e => ((e.extendedProperties || {}).private || {}).mokpyo === '1';
+// To-do가 캘린더에 놓일 날짜·제목: 완료 = 끝낸 날, 못 한 것 = 오늘(넘어온 일), 앞으로 할 것 = 그날
+function gWant(t, T) { return { date: t.done ? (t.doneDate || t.date) : (t.date < T ? T : t.date), summary: (t.done ? '✓ ' : '') + t.title }; }
+function gMaybeSync(force) {
+  if (!gReady() || gSyncing) return;
+  const T = today(), sig = T + JSON.stringify(doc.todos.map(t => [t.id, t.del ? 1 : 0, t.date, t.title, t.done, t.doneDate]));
+  if (!force && sig === gSig) return;
+  gSync(sig);
+}
+async function gSync(sig) {
+  gSyncing = true;
+  try {
+    const T = today(), from = addDays(T, -60), items = []; let page = '';
+    do { // 이 프로그램이 만든 일정만(mokpyo=1) 가져옴
+      const r = await gApi(`/calendars/primary/events?privateExtendedProperty=${encodeURIComponent('mokpyo=1')}&timeMin=${encodeURIComponent(gIso(from))}&timeMax=${encodeURIComponent(gIso(addDays(T, 400)))}&maxResults=2500&singleEvents=true${page ? '&pageToken=' + encodeURIComponent(page) : ''}`);
+      items.push(...(r.items || [])); page = r.nextPageToken || '';
+    } while (page);
+    const byT = new Map();
+    for (const e of items) { const tid = ((e.extendedProperties || {}).private || {}).tid; if (!tid) continue; if (byT.has(tid)) { await gApi(`/calendars/primary/events/${encodeURIComponent(e.id)}`, { method: 'DELETE' }); continue; } byT.set(tid, e); } // 두 기기가 동시에 만든 중복 정리
+    for (const t of doc.todos) {
+      const e = byT.get(t.id);
+      if (t.del) { if (e) await gApi(`/calendars/primary/events/${encodeURIComponent(e.id)}`, { method: 'DELETE' }); continue; }
+      const w = gWant(t, T); if (!e && w.date < from) continue;
+      const when = { start: { date: w.date }, end: { date: addDays(w.date, 1) } };
+      if (!e) await gApi('/calendars/primary/events', { method: 'POST', body: JSON.stringify(Object.assign({ summary: w.summary, description: '목표·루틴 「오늘의 To-do」에서 만든 일정입니다. 고칠 때는 목표·루틴에서 고쳐 주세요.', transparency: 'transparent', extendedProperties: { private: { mokpyo: '1', tid: t.id } } }, when)) });
+      else if ((e.start || {}).date !== w.date || e.summary !== w.summary) await gApi(`/calendars/primary/events/${encodeURIComponent(e.id)}`, { method: 'PATCH', body: JSON.stringify(Object.assign({ summary: w.summary }, when)) });
+    }
+    gSig = sig || ''; gLast = Date.now(); gcErr = '';
+  } catch (x) { gcErr = x.message === 'auth' ? '' : (x.message || '구글 캘린더 동기화 실패'); }
+  finally { gSyncing = false; if (ui.tab === 'today' || ui.tab === 'set') setTimeout(render, 0); }
+}
+// 고른 날의 구글 캘린더 일정(이 프로그램이 만든 To-do 일정은 뺌). 2분 동안은 다시 묻지 않음
+async function gLoadDay(d) {
+  if (!gReady()) return;
+  const c = gDay[d]; if (c && (c.loading || Date.now() - c.at < 120000)) return;
+  gDay[d] = Object.assign({}, c, { loading: true });
+  try {
+    const r = await gApi(`/calendars/primary/events?timeMin=${encodeURIComponent(gIso(d))}&timeMax=${encodeURIComponent(gIso(addDays(d, 1)))}&singleEvents=true&orderBy=startTime&maxResults=50`);
+    gDay[d] = { at: Date.now(), items: (r.items || []).filter(e => !gMine(e) && e.status !== 'cancelled') };
+  } catch (x) { gDay[d] = { at: Date.now(), items: (c && c.items) || [], err: x.message === 'auth' ? '' : x.message }; }
+  if (ui.tab === 'today' && ui.date === d) render();
+}
+AFTER.today = () => { gLoadDay(ui.date); gMaybeSync(); };
+if (gWanted()) gLoad(); // 「다시 연결」을 누르자마자 로그인 창이 열리도록 미리 불러 둠
+function gCardHtml(d) {
+  if (!gOK()) return '';
+  if (!gReady()) return `<div class="card gcal"><h2>📅 구글 캘린더</h2><p class="muted" style="margin:0 0 8px">${gWanted() ? '연결이 끝났습니다(1시간마다 다시 연결 필요). 한 번 누르면 일정과 To-do가 다시 맞춰집니다.' : '연결하면 이날 일정이 여기에 보이고, To-do가 구글 캘린더에도 생깁니다.'}</p><button class="primary" data-act="gConnect">${gWanted() ? '구글 캘린더 다시 연결' : '구글 캘린더 연결'}</button>${gcErr ? `<p class="neg" style="margin:8px 0 0">${esc(gcErr)}</p>` : ''}</div>`;
+  const c = gDay[d], fmt = e => e.start && e.start.dateTime ? new Date(e.start.dateTime).toTimeString().slice(0, 5) : '종일';
+  const rows = c && c.items ? c.items.map(e => `<div class="gev"><span class="gt">${fmt(e)}</span><span class="gn">${esc(e.summary || '(제목 없음)')}${e.location ? `<small>${esc(e.location)}</small>` : ''}</span></div>`).join('') : '';
+  return `<div class="card gcal"><h2>📅 ${d === today() ? '오늘' : '이날'} 일정 <small>구글 캘린더${gLast ? ` · To-do 맞춤 ${new Date(gLast).toTimeString().slice(0, 5)}` : ''}${gSyncing ? ' · 맞추는 중…' : ''}</small></h2>
+    ${c && c.items ? (rows || '<p class="muted" style="margin:0">일정이 없습니다.</p>') : '<p class="muted" style="margin:0">불러오는 중…</p>'}${(c && c.err) || gcErr ? `<p class="neg" style="margin:8px 0 0">${esc((c && c.err) || gcErr)}</p>` : ''}</div>`;
+}
+
 /* ====================== 화면: 오늘 ====================== */
 VIEWS.today = () => {
   const d = ui.date, isToday = d === today(), st = dayStat(d), ws = weekStart(d);
@@ -825,7 +924,8 @@ VIEWS.today = () => {
       ${groups.map(g => { const daily = g.list.filter(r => !isWeekly(r)), n = daily.filter(r => isDone(r, d)).length; /* 영역 숫자: 매일 루틴만(주 N회 루틴 제외) */ return `<div class="grp"><div class="grp-h"><span>${esc(g.a.icon)} ${esc(g.a.name)}</span>${daily.length ? `<span class="gcnt${n === daily.length ? ' full' : ''}">${n}/${daily.length}</span>` : ''}</div><div class="rt-grid">${g.list.map(rtRow).join('')}</div></div>`; }).join('') || `<p class="muted">이날 할 루틴이 없습니다. <button class="link" data-act="go" data-tab="routine">루틴 추가 →</button></p>`}
     </div>
     <div class="stack">
-      <div class="card"><h2>${isToday ? '오늘의' : '이날'} To-do <small>못 한 것은 다음 날로 자동으로 넘어감</small></h2>
+      ${gCardHtml(d)}
+      <div class="card"><h2>${isToday ? '오늘의' : '이날'} To-do <small>못 한 것은 다음 날로 자동으로 넘어감${gReady() ? ' · 구글 캘린더와 연동 중' : ''}</small></h2>
         <form class="addtask" data-form="todo"><input name="title" placeholder="할 일 입력 후 Enter" autocomplete="off" data-keep="todoInput"><input type="date" name="date" value="${d}" title="해야 하는 날"><button class="primary" type="submit">추가</button></form>
         ${todoSections(todos, upcoming, d)}
       </div>
@@ -1016,6 +1116,10 @@ VIEWS.set = () => {
       <p class="help">${work ? `불러옴: ${esc(workSrc)} · 사건 ${(work.cases || []).length}건 · 미결 ${workMetric('wOpen')}건${(work.meta || {}).savedAtIso ? ` · 업무관리 마지막 저장 ${esc(String(work.meta.savedAtIso).slice(0, 16).replace('T', ' '))}` : ''}` : '아직 업무관리 데이터를 불러오지 못했습니다.'}<br>숫자 목표에서 올해 수임액·입금액·수임 건수·미결 사건 수 등을 현재값으로 쓸 수 있습니다.</p>
       ${storeMode() === 'ms' ? `<div class="toolbar"><span class="hint">업무관리 파일 위치</span><input id="workPath" value="${esc(lsGet(K_WPATH) || WORK_DEFAULT)}" style="flex:1;min-width:180px"><button data-act="saveWorkPath">바꾸기</button></div>` : '<p class="help">PC에서는 이 PC에서 마지막으로 연 업무관리 내용을 씁니다.</p>'}
       <button data-act="workReload">다시 불러오기</button> <a class="link" href="${esc(workUrl(''))}" target="_blank" rel="noopener">업무관리 열기 →</a></div>
+    <div class="card"><h2>구글 캘린더 연동</h2>
+      <p class="help">${!GCAL.clientId ? '아직 구글 클라우드 설정이 끝나지 않아 꺼져 있습니다.' : location.protocol !== 'https:' ? '구글 캘린더 연동은 인터넷 주소에서만 됩니다. PC에서도 <a class="link" href="https://seo-seung-jung.github.io/goals/" target="_blank" rel="noopener">https://seo-seung-jung.github.io/goals/</a> 로 열면 쓸 수 있습니다.' : gReady() ? `연결됨 · 「오늘의 To-do」가 구글 캘린더(기본 캘린더)에 종일 일정으로 들어가고, 오늘 화면에 그날 일정이 보입니다.${gLast ? ` 마지막으로 맞춘 시각 ${new Date(gLast).toTimeString().slice(0, 5)}.` : ''}` : gWanted() ? '연결 시간이 지났습니다(1시간마다). 「다시 연결」을 누르세요.' : '연결하지 않았습니다.'}<br>To-do를 추가·완료·삭제하면 캘린더 일정도 따라 바뀝니다(완료하면 제목 앞에 ✓). 캘린더에서 직접 고친 내용은 To-do로 돌아오지 않습니다.</p>
+      ${gcErr ? `<p class="neg">${esc(gcErr)}</p>` : ''}
+      ${gOK() ? `<div class="toolbar"><button class="primary" data-act="gConnect">${gReady() ? '다시 연결' : gWanted() ? '다시 연결' : '구글 캘린더 연결'}</button>${gReady() ? '<button data-act="gSyncNow">지금 맞추기</button>' : ''}${gWanted() ? '<button class="ghost" data-act="gDisconnect">연동 끊기</button>' : ''}</div>` : ''}</div>
   </div>`;
 };
 
@@ -1054,6 +1158,8 @@ const ACT = {
   saveWorkPath: () => { const v = $('#workPath').value.trim(); if (!v) return; lsSet(K_WPATH, v.startsWith('/') ? v : '/' + v); ACT.workReload(); },
   workReload: async () => { await loadWork(true); render(); toast(work ? '업무관리 데이터를 다시 불러왔습니다' : '업무관리 데이터를 찾지 못했습니다'); },
   ledgerReload: async () => { await loadLedger(true); render(); toast(ledger ? '가계부 데이터를 다시 불러왔습니다' : '가계부 데이터를 찾지 못했습니다'); },
+  gConnect: () => gConnect(), gSyncNow: () => { gDay = {}; gMaybeSync(true); render(); },
+  gDisconnect: () => { if (confirm('구글 캘린더 연동을 끊을까요? (이미 만들어진 캘린더 일정은 그대로 남습니다)')) gDisconnect(); },
   backup: () => download(`목표관리_백업_${today()}.json`, JSON.stringify(doc), 'application/json'),
   importMerge: () => $('#importFile').click(),
 };

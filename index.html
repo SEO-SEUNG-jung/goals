@@ -669,7 +669,7 @@ async function loadLedger(force) {
   LDAYS = new Set(); for (const t of ledger.tx || []) if (!t.del && t.upd > 1e12) LDAYS.add(ds(new Date(t.upd)));
   return JSON.stringify([ledgerSrc, (ledger.tx || []).length, ledger.meta && ledger.meta.upd]) !== before;
 }
-const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['loan', '가계부: 대출 잔액(「대출」 묶음, 카드 미결제 제외)'], ['invest', '가계부: 투자 평가액(「투자」 묶음)'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wSalesYear', '업무: 그 해 매출액(수임 기준·VAT 포함)'], ['wSalesRange', '업무: 목표 기간 누적 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(수수료)'], ['wPaidYear', '업무: 올해 입금액(수수료)'], ['wPaidMonth', '업무: 이번 달 입금액(수수료)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
+const METRICS = [['', '직접 입력'], ['savYear', '가계부: 올해 저축·투자 누계'], ['net', '가계부: 순자산'], ['debt', '가계부: 총부채'], ['loan', '가계부: 대출 잔액(「대출」 묶음, 카드 미결제 제외)'], ['invest', '가계부: 투자 평가액(「투자」 묶음)'], ['assets', '가계부: 총자산'], ['lifeMonth', '가계부: 이번 달 생활지출(고정+변동)'], ['wSalesMonth', '업무: 그 달 매출액(수임 기준·VAT 포함)'], ['wSalesYear', '업무: 그 해 매출액(수임 기준·VAT 포함)'], ['wSalesRange', '업무: 목표 기간 누적 매출액(수임 기준·VAT 포함)'], ['wFeeYear', '업무: 올해 수임액(VAT 포함)'], ['wPaidYear', '업무: 올해 입금액(VAT 포함)'], ['wPaidMonth', '업무: 이번 달 입금액(VAT 포함)'], ['wCountYear', '업무: 올해 수임 건수'], ['wOpen', '업무: 미결 사건 수'], ['wLeadWin', '업무: 올해 리드 수임 성공 건수']];
 const metricValue = (key, g) => !key ? null : key.startsWith('rt:') ? routineMetric(key.slice(3), g) : key[0] === 'w' ? workMetric(key, g) : ledgerMetric(key); // g: ëª©í(ì ëª©íë©´ ê·¸ ë¬ ê¸°ì¤ì¼ë¡ ê³ì°)
 function routineMetric(rid, g) { // 루틴 연결(rt:루틴id, 여러 개면 rt:id1+id2 — 그중 하나라도 한 날): 그 달(월 목표면 목표의 달, 아니면 이번 달)에 그 루틴을 한 날 수
   const ids = rid.split('+'), rs = (doc.routines || []).filter(x => ids.includes(x.id) && !x.del); if (!rs.length) return null;
@@ -724,8 +724,8 @@ function workMetric(key, g) {
   if (key === 'wSalesYear') { const y = /^\d{4}$/.test(per) ? per : String(Y); return sales(y)(y); }
   if (key === 'wSalesRange') { const r = per.match(/(\d{4})\s*~\s*(\d{4})/); return r ? sales(r[1])(r[2]) : /^\d{4}$/.test(per) ? sales(per)(per) : sales('0000')('9999'); }
   if (key === 'wCountYear') return cases.filter(c => wCaseYear(c) === Y).length;
-  if (key === 'wFeeYear') return cases.filter(c => wCaseYear(c) === Y).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + (b.fee || 0), 0), 0);
-  if (key === 'wPaidYear' || key === 'wPaidMonth') { let s = 0; for (const c of cases) for (const b of c.billings || []) if (b.paidDate && wBillTotal(b) && (key === 'wPaidYear' ? +b.paidDate.slice(0, 4) === Y : b.paidDate.startsWith(ym))) s += b.fee || 0; return s; }
+  if (key === 'wFeeYear') return cases.filter(c => wCaseYear(c) === Y).reduce((a, c) => a + (c.billings || []).reduce((s, b) => s + wBillTotal(b), 0), 0); // VAT 포함(수수료+부가세+기타) — 업무관리 대시보드와 같은 기준 (2026-10-13)
+  if (key === 'wPaidYear' || key === 'wPaidMonth') { let s = 0; for (const c of cases) for (const b of c.billings || []) if (b.paidDate && wBillTotal(b) && (key === 'wPaidYear' ? +b.paidDate.slice(0, 4) === Y : b.paidDate.startsWith(ym))) s += wBillTotal(b); return s; } // VAT 포함 (2026-10-13)
   if (key === 'wOpen') return cases.filter(c => c.stage !== WORK_DONE).length;
   if (key === 'wLeadWin') return (work.leads || []).filter(l => l.stage === '수임 성공' && String(l.contactDate || '').startsWith(String(Y))).length;
   return null;

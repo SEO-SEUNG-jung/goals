@@ -250,6 +250,12 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
 .pbar.done>i{background:var(--pos)}
 .daybar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px}
 .daybar .dtitle{display:flex;align-items:center;gap:8px;font-size:17px}
+.fortune{padding:10px 14px;margin-top:-6px}
+.fortune .fh{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;font-size:14.5px}
+.fortune .fs{color:#d39b12;letter-spacing:1px;font-size:15px}
+.fortune .ft{margin-left:auto;font-size:13px;color:var(--muted)}
+.fortune .fl{margin-top:4px;font-size:13.5px;color:var(--muted)}
+@media (max-width:640px){.fortune .ft{margin-left:0}}
 button.nav{width:40px;height:36px;padding:0;font-size:14px}
 .badge{font-size:11px;background:var(--accent);color:#fff;border-radius:999px;padding:2px 8px}
 .grp{margin-bottom:10px}
@@ -901,6 +907,51 @@ function gCardHtml(d) {
     ${c && c.items ? (rows || '<p class="muted" style="margin:0">일정이 없습니다.</p>') : '<p class="muted" style="margin:0">불러오는 중…</p>'}${(c && c.err) || gcErr ? `<p class="neg" style="margin:8px 0 0">${esc((c && c.err) || gcErr)}</p>` : ''}</div>`;
 }
 
+/* ====================== 오늘의 운세 (2026-10-21, 재미로) ======================
+   그날 일진(60갑자)을 내 사주 원국(설정에서 넣음, doc.meta.saju = {y, m, d, h} 각 '甲子' 같은 두 글자)과 비교해 규칙으로 한 줄 요약.
+   생년월일·원국은 공개 파일(이 프로그램)에 넣지 않고 개인 데이터 파일(meta)에만 저장한다.
+   - 일진: 2000-01-01 = 戊午(54번째) 기준 날짜 차이로 계산
+   - 십신: 일진 천간을 내 일간과 비교(오행 상생·상극 + 음양) → 주제·기본 별점(FORTUNE)
+   - 가감: 천간합(내 일간과) +1, 천간충 −1, 지지충(내 사주 지지와) −1, 지지합은 문구만. 별점 1~5
+   - 행운의 시간: 07~21시 시진 중 일진 지지와 육합 +2, 삼합 +1, 나를 돕는 오행(비겁·인성) +1, 일진·내 일지와 충 −3 → 점수가 가장 높은 시간 */
+const GAN = '甲乙丙丁戊己庚辛壬癸', JI = '子丑寅卯辰巳午未申酉戌亥', GAN_KO = '갑을병정무기경신임계', JI_KO = '자축인묘진사오미신유술해';
+const GZ = [...Array(60).keys()].map(i => GAN[i % 10] + JI[i % 12]);
+const JI_MAIN = '癸己甲乙戊丙丁己庚辛戊壬'; // 지지의 본기(대표 천간)
+const ganzhiOf = d => { const n = Math.round((Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) - Date.UTC(2000, 0, 1)) / 864e5); return GZ[((54 + n) % 60 + 60) % 60]; };
+const elOfGan = g => Math.floor(GAN.indexOf(g) / 2); // 0목 1화 2토 3금 4수
+function tenGod(dm, g) { const r = (elOfGan(g) - elOfGan(dm) + 5) % 5, same = GAN.indexOf(dm) % 2 === GAN.indexOf(g) % 2; return [['비견', '겁재'], ['식신', '상관'], ['편재', '정재'], ['편관', '정관'], ['편인', '정인']][r][same ? 0 : 1]; }
+const FORTUNE = { 비견: [3, '함께하는 날', '혼자보다 함께할 때 힘이 나는 날'], 겁재: [2, '지출 주의의 날', '돈이 새기 쉬우니 약속과 지출을 한 번 더 점검'], 식신: [4, '꾸준한 성과의 날', '하던 일을 차근차근 마무리하면 결과가 따르는 날'], 상관: [3, '말과 협상의 날', '말로 기회를 만들되 말투는 부드럽게'], 편재: [4, '큰 기회의 날', '뜻밖의 기회나 돈 흐름이 생기는 날, 무리한 결정만 조심'], 정재: [4, '수금·실속의 날', '먼저 연락하면 돈이 움직이는 날'], 편관: [2, '돌발 주의의 날', '갑작스러운 일이 생겨도 침착하게, 무리하지 말 것'], 정관: [4, '신뢰의 날', '원칙대로 하면 신뢰가 쌓이는 날'], 편인: [3, '생각·준비의 날', '공부와 기획에 좋고 큰 결정은 하루 미루기'], 정인: [5, '도움·문서의 날', '서류와 계약이 잘 풀리고 도움을 받는 날'] };
+const GAN_HAP = ['甲己', '乙庚', '丙辛', '丁壬', '戊癸'], GAN_CHUNG = ['甲庚', '乙辛', '丙壬', '丁癸'];
+const JI_HAP = ['子丑', '寅亥', '卯戌', '辰酉', '巳申', '午未'], JI_CHUNG = ['子午', '丑未', '寅申', '卯酉', '辰戌', '巳亥'], SAMHAP = ['申子辰', '亥卯未', '寅午戌', '巳酉丑'];
+const pairIn = (list, a, b) => list.some(p => p === a + b || p === b + a);
+const sajuOk = s => s && /^[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]$/.test(s.d || '');
+function fortuneOf(d) {
+  const s = doc.meta.saju; if (!sajuOk(s)) return null;
+  const gz = ganzhiOf(d), g = gz[0], j = gz[1], dm = s.d[0], god = tenGod(dm, g), [base, title, line] = FORTUNE[god];
+  const natal = [s.y, s.m, s.d, s.h].filter(x => x && x.length === 2).map(x => x[1]);
+  let star = base; const notes = [];
+  if (pairIn(GAN_HAP, g, dm)) { star++; notes.push('거래처·기관과 손발이 맞음'); }
+  if (pairIn(GAN_CHUNG, g, dm)) { star--; notes.push('마음이 흔들리기 쉬움'); }
+  if (natal.some(x => pairIn(JI_CHUNG, j, x))) { star--; notes.push('일정 변동 주의'); }
+  else if (natal.some(x => pairIn(JI_HAP, j, x))) notes.push('귀인의 도움');
+  star = Math.max(1, Math.min(5, star));
+  const de = elOfGan(dm), helps = e => e === de || e === (de + 4) % 5; // 비겁·인성 오행
+  let best = null;
+  for (let k = 4; k <= 10; k++) { // 辰(07시)~戌(21시)
+    const hj = JI[k]; let sc = 0;
+    if (pairIn(JI_HAP, hj, j)) sc += 2;
+    if (hj !== j && SAMHAP.some(t => t.includes(hj) && t.includes(j))) sc += 1;
+    if (helps(elOfGan(JI_MAIN[k]))) sc += 1;
+    if (pairIn(JI_CHUNG, hj, j) || pairIn(JI_CHUNG, hj, s.d[1])) sc -= 3;
+    if (!best || sc > best.sc) best = { k, sc };
+  }
+  return { gz, ko: GAN_KO[GAN.indexOf(g)] + JI_KO[JI.indexOf(j)], god, title, line, notes, star, time: `${pad(best.k * 2 - 1)}~${pad(best.k * 2 + 1)}시` };
+}
+function fortuneHtml(d) {
+  const f = fortuneOf(d); if (!f) return '';
+  return `<div class="fortune card"><div class="fh"><span>🔮 ${f.gz}일(${f.ko}일) · <b>${f.god} — ${f.title}</b></span><span class="fs" title="별점 ${f.star}점">${'★'.repeat(f.star)}${'☆'.repeat(5 - f.star)}</span><span class="ft">행운의 시간 <b>${f.time}</b></span></div><div class="fl">${esc(f.line)}${f.notes.length ? ' · ' + f.notes.join(' · ') : ''}</div></div>`;
+}
+
 /* ====================== 화면: 오늘 ====================== */
 VIEWS.today = () => {
   const d = ui.date, isToday = d === today(), st = dayStat(d), ws = weekStart(d);
@@ -919,6 +970,7 @@ VIEWS.today = () => {
     <div class="dtitle"><b>${dlabel(d)}</b>${isToday ? '<span class="badge">오늘</span>' : '<button class="link" data-act="dayToday">오늘로</button>'}</div>
     <button class="nav" data-act="dayMove" data-n="1" aria-label="다음날">▶</button>
   </div>
+  ${fortuneHtml(d)}
   <div class="today-grid">
     <div class="card"><h2>${isToday ? '오늘의' : '이날'} 루틴 <small>${st.all - st.done ? `남은 루틴 ${st.all - st.done}개` : st.all ? '모두 완료 🎉' : ''} · 누르면 체크, 다시 누르면 해제</small></h2>
       ${groups.map(g => { const daily = g.list.filter(r => !isWeekly(r)), n = daily.filter(r => isDone(r, d)).length; /* 영역 숫자: 매일 루틴만(주 N회 루틴 제외) */ return `<div class="grp"><div class="grp-h"><span>${esc(g.a.icon)} ${esc(g.a.name)}</span>${daily.length ? `<span class="gcnt${n === daily.length ? ' full' : ''}">${n}/${daily.length}</span>` : ''}</div><div class="rt-grid">${g.list.map(rtRow).join('')}</div></div>`; }).join('') || `<p class="muted">이날 할 루틴이 없습니다. <button class="link" data-act="go" data-tab="routine">루틴 추가 →</button></p>`}
@@ -1116,6 +1168,10 @@ VIEWS.set = () => {
       <p class="help">${work ? `불러옴: ${esc(workSrc)} · 사건 ${(work.cases || []).length}건 · 미결 ${workMetric('wOpen')}건${(work.meta || {}).savedAtIso ? ` · 업무관리 마지막 저장 ${esc(String(work.meta.savedAtIso).slice(0, 16).replace('T', ' '))}` : ''}` : '아직 업무관리 데이터를 불러오지 못했습니다.'}<br>숫자 목표에서 올해 수임액·입금액·수임 건수·미결 사건 수 등을 현재값으로 쓸 수 있습니다.</p>
       ${storeMode() === 'ms' ? `<div class="toolbar"><span class="hint">업무관리 파일 위치</span><input id="workPath" value="${esc(lsGet(K_WPATH) || WORK_DEFAULT)}" style="flex:1;min-width:180px"><button data-act="saveWorkPath">바꾸기</button></div>` : '<p class="help">PC에서는 이 PC에서 마지막으로 연 업무관리 내용을 씁니다.</p>'}
       <button data-act="workReload">다시 불러오기</button> <a class="link" href="${esc(workUrl(''))}" target="_blank" rel="noopener">업무관리 열기 →</a></div>
+    <div class="card"><h2>🔮 오늘의 운세 <small>재미로 · 오늘 화면 날짜 아래에 한 줄</small></h2>
+      <p class="help">내 사주 원국(연주·월주·일주·시주)을 고르면 그날 일진과 비교해 한 줄 운세·별점·행운의 시간을 보여 줍니다. 생년월일로 원국을 모르면 Claude에게 물어보세요. 이 값은 내 데이터 파일에만 저장되고 인터넷에 공개되는 프로그램 파일에는 들어가지 않습니다. 일주를 비우면 운세가 꺼집니다.</p>
+      <div class="toolbar">${[['y', '연주'], ['m', '월주'], ['d', '일주'], ['h', '시주']].map(([k, l]) => `<label class="field"><span>${l}</span><select id="saju_${k}"><option value="">${k === 'h' ? '모름' : '선택'}</option>${GZ.map((z, i) => `<option value="${z}"${((doc.meta.saju || {})[k] || '') === z ? ' selected' : ''}>${z} (${GAN_KO[i % 10]}${JI_KO[i % 12]})</option>`).join('')}</select></label>`).join('')}<button class="primary" data-act="sajuSave">저장</button></div>
+      ${sajuOk(doc.meta.saju) ? `<p class="help">오늘: ${(f => f ? `${f.gz}일 · ${f.god} — ${f.title} ${'★'.repeat(f.star)}` : '')(fortuneOf(today()))}</p>` : ''}</div>
     <div class="card"><h2>구글 캘린더 연동</h2>
       <p class="help">${!GCAL.clientId ? '아직 구글 클라우드 설정이 끝나지 않아 꺼져 있습니다.' : location.protocol !== 'https:' ? '구글 캘린더 연동은 인터넷 주소에서만 됩니다. PC에서도 <a class="link" href="https://seo-seung-jung.github.io/goals/" target="_blank" rel="noopener">https://seo-seung-jung.github.io/goals/</a> 로 열면 쓸 수 있습니다.' : gReady() ? `연결됨 · 「오늘의 To-do」가 구글 캘린더(기본 캘린더)에 종일 일정으로 들어가고, 오늘 화면에 그날 일정이 보입니다.${gLast ? ` 마지막으로 맞춘 시각 ${new Date(gLast).toTimeString().slice(0, 5)}.` : ''}` : gWanted() ? '연결 시간이 지났습니다(1시간마다). 「다시 연결」을 누르세요.' : '연결하지 않았습니다.'}<br>To-do를 추가·완료·삭제하면 캘린더 일정도 따라 바뀝니다(완료하면 제목 앞에 ✓). 캘린더에서 직접 고친 내용은 To-do로 돌아오지 않습니다.</p>
       ${gcErr ? `<p class="neg">${esc(gcErr)}</p>` : ''}
@@ -1158,6 +1214,7 @@ const ACT = {
   saveWorkPath: () => { const v = $('#workPath').value.trim(); if (!v) return; lsSet(K_WPATH, v.startsWith('/') ? v : '/' + v); ACT.workReload(); },
   workReload: async () => { await loadWork(true); render(); toast(work ? '업무관리 데이터를 다시 불러왔습니다' : '업무관리 데이터를 찾지 못했습니다'); },
   ledgerReload: async () => { await loadLedger(true); render(); toast(ledger ? '가계부 데이터를 다시 불러왔습니다' : '가계부 데이터를 찾지 못했습니다'); },
+  sajuSave: () => { const v = k => ($('#saju_' + k) || {}).value || ''; setMeta(m => { m.saju = v('d') ? { y: v('y'), m: v('m'), d: v('d'), h: v('h') } : null; }); commit(); toast(v('d') ? '운세에 쓸 사주를 저장했습니다' : '운세를 껐습니다'); },
   gConnect: () => gConnect(), gSyncNow: () => { gDay = {}; gMaybeSync(true); render(); },
   gDisconnect: () => { if (confirm('구글 캘린더 연동을 끊을까요? (이미 만들어진 캘린더 일정은 그대로 남습니다)')) gDisconnect(); },
   backup: () => download(`목표관리_백업_${today()}.json`, JSON.stringify(doc), 'application/json'),

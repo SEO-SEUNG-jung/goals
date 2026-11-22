@@ -549,8 +549,12 @@ async function connect() {
     }
     if (!fsOK) { toast('이 브라우저에서는 파일에 직접 저장할 수 없습니다'); return; }
     if (stored) {
-      const p = await stored.requestPermission({ mode: 'readwrite' });
+      // 예전에 연결한 파일에 다시 허락 요청. 거절·오류면 그 기억을 지우고 「한 번 더 누르기」 안내 —
+      // 엣지는 허락 창 뒤에 파일 선택 창을 이어서 열지 못해서, 예전엔 여기서 멈춰 버튼이 안 먹었음 (2026-11-23)
+      let p = 'denied'; try { p = await stored.requestPermission({ mode: 'readwrite' }); } catch (e) { p = 'error'; }
       if (p === 'granted') { fh = stored; store = fileStore(fh); await openStore(); return; }
+      stored = null; idbSet('file', null);
+      toast('파일을 다시 골라야 합니다 — 「데이터 파일 연결」을 한 번 더 눌러 주세요'); return;
     }
     const [h] = await window.showOpenFilePicker({ types: PICK_TYPES, multiple: false });
     fh = stored = h; idbSet('file', h); store = fileStore(h); await openStore();

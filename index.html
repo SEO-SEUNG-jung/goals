@@ -558,7 +558,7 @@ async function connect() {
     }
     const [h] = await window.showOpenFilePicker({ types: PICK_TYPES, multiple: false });
     fh = stored = h; idbSet('file', h); store = fileStore(h); await openStore();
-  } catch (e) { if (e.name !== 'AbortError') { lastErr = e.message; toast('연결 실패: ' + e.message); setStatus(); renderBanner(); } }
+  } catch (e) { if (e.name !== 'AbortError') { lastErr = (e.name || '') + ': ' + (e.message || e); toast('연결 실패: ' + e.message); setStatus(); renderBanner(); } }
 }
 async function createFile() {
   try {
@@ -652,7 +652,7 @@ function renderBanner() {
       <button class="primary" data-act="connect">${msAccount ? '다시 연결' : 'Microsoft 계정으로 로그인'}</button>${/찾지 못했/.test(lastErr) ? '<button data-act="createMs">OneDrive에 새로 만들기</button>' : ''}</div></div>`;
     return;
   }
-  b.innerHTML = `<div class="inner"><div class="notice"><p><b>데이터 파일을 연결해 주세요.</b> 이 프로그램과 같은 폴더(OneDrive › 개인문서)의 <b>목표관리_데이터.json</b>을 선택하면, 입력할 때마다 그 파일에 저장되고 다른 기기와 함께 맞춰집니다.${stored ? ' (이전에 연결한 파일이 있어 한 번만 누르면 됩니다)' : ''}</p>
+  b.innerHTML = `<div class="inner"><div class="notice"><p><b>데이터 파일을 연결해 주세요.</b> 이 프로그램과 같은 폴더(OneDrive › 개인문서)의 <b>목표관리_데이터.json</b>을 선택하면, 입력할 때마다 그 파일에 저장되고 다른 기기와 함께 맞춰집니다.${stored ? ' (이전에 연결한 파일이 있어 한 번만 누르면 됩니다)' : ''}${lastErr ? `<br><span class="neg"><b>연결 오류:</b> ${esc(lastErr)}</span>` : ''}</p>
     <button class="primary" data-act="connect">${stored ? '다시 연결' : '데이터 파일 연결'}</button>${stored ? '<button data-act="pickOther">다른 파일 선택</button>' : '<button data-act="createFile">새로 만들기</button>'}</div></div>`;
 }
 // OneDrive에 데이터 파일이 아직 없을 때: 지금 내용으로 새로 만듦
